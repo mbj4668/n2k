@@ -1,0 +1,147 @@
+#!/usr/bin/env escript
+%% -*- erlang -*-
+%%! -noinput
+
+%% Usage: n2k [-f csv | pretty] [-o OutFile] InFile
+%%  Default outformat is 'pretty'
+
+main(Args) ->
+    ScriptName = script_name(),
+    code:add_patha(ebin(ScriptName)),
+
+    try
+        A = parse_args(Args, #{fmt => pretty}),
+        InFName =
+            case maps:find(infname, A) of
+                {ok, V} ->
+                    V;
+                error ->
+                    throw(no_infile)
+            end,
+        InFmt =
+            case guess_format(InFName) of
+                raw ->
+                    raw;
+                csv ->
+                    csv;
+                unknown ->
+                    throw(unknown_format)
+            end,
+        {CloseF, WriteF} =
+            case maps:find(outfname, A) of
+                {ok, OutFName} ->
+                    {ok, OutFd} =
+                        file:open(OutFName,
+                                  [write, raw, binary, delayed_write]),
+                    {fun() -> file:close(OutFd) end,
+                     fun(Bin) -> file:write(OutFd, Bin) end};
+                error ->
+                    {fun() -> ok end,
+                     fun(Bin) -> io:fwrite("~s", [Bin]) end}
+            end,
+        {OutF, OutFInitState} =
+            case maps:get(fmt, A) of
+                csv ->
+                    {fun(Frame, _) ->
+                             WriteF(n2k_csv:encode_csv(Frame))
+                     end,
+                     []};
+                pretty ->
+                    PrettyF =
+                        fun(Packet, _) ->
+                                Str = n2k:fmt_nmea_packet(Packet),
+                                WriteF(Str)
+                        end,
+                    {fun(Frame, State) ->
+                             n2k:decode_nmea(Frame, State)
+                     end,
+                     n2k:decode_nmea_init(PrettyF, [])}
+            end,
+        try
+            case InFmt of
+                raw ->
+                    n2k_raw:read_raw_file(InFName, OutF, OutFInitState);
+                csv ->
+                    n2k_csv:read_csv_file(InFName, OutF, OutFInitState)
+            end
+        after
+            CloseF()
+        end
+    catch
+        _:_Error ->
+            io:format("** ~p\n", [_Error]),
+            usage()
+    end;
+main(_) ->
+    usage().
+
+usage() ->
+    io:format("usage: n2k -f csv | pretty <InFile>\n"),
+    halt(1).
+
+ebin(ScriptName) ->
+    %% The escript is located in .../n2k/bin
+    AppDir = filename:dirname(filename:dirname(ScriptName)),
+    filename:join(AppDir, "ebin").
+
+script_name() ->
+    script_name(escript:script_name()).
+
+script_name([$/|_] = Name0) ->
+    case file:read_link(Name0) of
+        {ok, [$/|_] = Name} ->
+            Name;
+        {ok, RelName} ->
+            script_name(filename:join(filename:dirname(Name0), RelName));
+        _ ->
+            %% there may still be symlink components
+            {ok, Cwd} = file:get_cwd(),
+            ok = file:set_cwd(filename:dirname(Name0)),
+            {ok, Dir} = file:get_cwd(),
+            ok = file:set_cwd(Cwd),
+            filename:join(Dir, filename:basename(Name0))
+    end;
+script_name(RelName) ->
+    script_name(filename:absname(RelName)).
+
+
+parse_args(["-f", Fmt | T], A) ->
+    case Fmt of
+        "csv" ->
+            parse_args(T, A#{fmt => csv});
+        "pretty" ->
+            parse_args(T, A#{fmt => pretty});
+        _ ->
+            throw({unknown_format, Fmt})
+    end;
+parse_args(["-o", OutFName | T], A) ->
+    parse_args(T, A#{outfname => OutFName});
+parse_args([InFName], A) ->
+    A#{infname => InFName};
+parse_args([H | _], _A) ->
+    throw({unknown_parameter, H});
+parse_args([], A) ->
+    A.
+
+guess_format(FName) ->
+    {ok, Fd} = file:open(FName, [read, raw, binary, read_ahead]),
+    try
+        {ok, Line} = file:read_line(Fd),
+        case binary:split(Line, <<" ">>, [global,trim_all]) of
+            [_TimeB, <<_DirCh>>, _CanIdB | _] ->
+                raw;
+            _ ->
+                case binary:split(Line, <<",">>, [global,trim_all]) of
+                    [_TimeB, _PriB, _PGNB, _SrcB, _DstB, _SzB | _] ->
+                        csv;
+                    _ ->
+                        unknown
+                end
+        end
+    catch
+        _:_Error ->
+            io:format("** ~p\n", [_Error]),
+            unknown
+    after
+        file:close(Fd)
+    end.
