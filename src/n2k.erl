@@ -3,8 +3,11 @@
 -export([decode_canid/1]).
 -export([decode_string_a/1, decode_string/2]).
 -export([fmt_ms_time/1, fmt_date/1, fmt_hex/2]).
--export([decode_nmea_init/2, decode_nmea/2]).
+-export([decode_nmea_init/0, decode_nmea/2]).
+-export([fmt_error/1]).
 -export([fmt_nmea_packet/1]).
+
+-export_type([canid/0, frame/0, packet/0]).
 
 %% A CANID is a 29-bit number.  When decoded, it is a canid().
 -type canid() ::
@@ -134,64 +137,68 @@ fmt_val(Val, Units) ->
     end.
 
 
-decode_nmea_init(PFun, PFunS) ->
-    {PFun, PFunS, #{}}.
+decode_nmea_init() ->
+    #{}.
 
-decode_nmea(Frame, {PFun, PFunS, Map0}) ->
+decode_nmea(Frame, Map0) ->
     {Time, _Dir, Id, Data} = Frame,
     {_Prio, PGN, Src, _Dst} = Id,
     try n2k_pgn:is_fast(PGN) of
         false ->
             Packet = {Time, Src, PGN, n2k_pgn:decode(PGN, Data)},
-            {PFunS, PFun(Packet, PFunS), Map0};
+            {true, Packet, Map0};
         true ->
             case Data of
                 <<Order:3,0:5,PLen,PayLoad/binary>> ->
                     %% this is the first of the fast packets, store for assembly
                     P = {Order, _Index = 0, PLen-size(PayLoad), [PayLoad]},
                     Map1 = maps:put({Src, PGN}, P, Map0),
-                    {PFun, PFunS, Map1};
+                    {false, Map1};
                 <<Order:3,Index:5,PayLoad/binary>> ->
                     PrevIndex = Index-1,
                     case maps:find({Src,PGN}, Map0) of
                         error ->
-                            io:format("warning: pgn ~w:~w not found\n",
-                                      [Src,PGN]),
                             %% warning and drop !
-                            {PFun, PFunS, Map0};
+                            {error, {pgn_not_found, Src, PGN}, Map0};
                         {ok, {Order, PrevIndex, PLen0, Data0}} ->
                             Data1 = [PayLoad | Data0],
                             case PLen0 - size(PayLoad) of
                                 PLen1 when PLen1 > 0 ->
                                     P = {Order, Index, PLen1, Data1},
                                     Map1 = maps:put({Src, PGN}, P, Map0),
-                                    {PFun, PFunS, Map1};
+                                    {false, Map1};
                                 _ ->
                                     %% last frame
                                     Data2 =
                                         list_to_binary(lists:reverse(Data1)),
-                                    Packet =
-                                        try
-                                            {Time, Src, PGN,
-                                             n2k_pgn:decode(PGN, Data2)}
-                                        catch
-                                            _:_ ->
-                                                {Time, Src, PGN, Data2}
-                                        end,
                                     Map1 = maps:remove({Src, PGN}, Map0),
-                                    {PFun, PFun(Packet, PFunS), Map1}
+                                    try
+                                        Packet = {Time, Src, PGN,
+                                                  n2k_pgn:decode(PGN, Data2)},
+                                        {true, Packet, Map1}
+                                    catch
+                                        _:_X:Stacktrace ->
+                                            io:format("** error: ~p ~p\n",
+                                                      [_X, Stacktrace]),
+                                            {error,
+                                             {decode_error, Src, PGN}, Map0}
+                                    end
                             end;
                         {ok, _P} ->
-                            io:format("warning: pgn ~w:~w, packet lost ~w\n",
-                                      [Src,PGN,PrevIndex]),
                             %% warning and drop !
-                            {PFun, PFunS, Map0}
+                            {error, {packet_loss, Src, PGN, PrevIndex}, Map0}
                     end
             end
     catch
         error:_X:Stacktrace ->
             io:format("** error: ~p ~p\n", [_X, Stacktrace]),
             Packet = {Time, Src, {unknown, PGN, binary_to_list(Data)}},
-            {PFun, PFun(Packet, PFunS), Map0}
+            {true, Packet, Map0}
     end.
 
+fmt_error({pgn_not_found, Src, PGN}) ->
+    io_lib:format("warning: pgn ~w:~w not found\n", [Src,PGN]);
+fmt_error({packet_loss, Src, PGN, PrevIndex}) ->
+    io_lib:format("warning: pgn ~w:~w, packet lost ~w\n", [Src,PGN,PrevIndex]);
+fmt_error({decode_error, Src, PGN}) ->
+    io_lib:format("warning: pgn ~w:~w, could not decode\n", [Src,PGN]).

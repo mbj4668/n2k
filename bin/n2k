@@ -41,6 +41,8 @@ main(Args) ->
             end,
         {OutF, OutFInitState} =
             case maps:get(fmt, A) of
+                csv when A == undefined ->
+                    {fun(_, _) -> ok end, []};
                 csv ->
                     {fun(Frame, _) ->
                              WriteF(n2k_csv:encode_csv(Frame))
@@ -48,14 +50,24 @@ main(Args) ->
                      []};
                 pretty ->
                     PrettyF =
-                        fun(Packet, _) ->
+                        fun(Packet) ->
                                 Str = n2k:fmt_nmea_packet(Packet),
                                 WriteF(Str)
                         end,
                     {fun(Frame, State) ->
-                             n2k:decode_nmea(Frame, State)
+                             case n2k:decode_nmea(Frame, State) of
+                                 {true, Packet, State1} ->
+                                     PrettyF(Packet),
+                                     State1;
+                                 {false, State1} ->
+                                     State1;
+                                 {error, Error, State1} ->
+                                     io:format(standard_error,
+                                               n2k:fmt_error(Error), []),
+                                     State1
+                             end
                      end,
-                     n2k:decode_nmea_init(PrettyF, [])}
+                     n2k:decode_nmea_init()}
             end,
         try
             case InFmt of
@@ -68,15 +80,15 @@ main(Args) ->
             CloseF()
         end
     catch
-        _:_Error ->
-            io:format("** ~p\n", [_Error]),
+        _:_Error:StackTrace ->
+            io:format("** ~p\n  ~p\n", [_Error, StackTrace]),
             usage()
     end;
 main(_) ->
     usage().
 
 usage() ->
-    io:format("usage: n2k -f csv | pretty <InFile>\n"),
+    io:format("usage: n2k [-f csv | pretty] [-o <OutFile>] <InFile>\n"),
     halt(1).
 
 ebin(ScriptName) ->
