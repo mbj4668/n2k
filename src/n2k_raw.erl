@@ -24,21 +24,21 @@ read_raw_file(FName, F, InitAcc) ->
 
 read_raw_fd(Fd, F, Acc) ->
     case file:read_line(Fd) of
-        {ok, Line0} ->
-            Line =
-                case binary:last(Line0) of
-                    $\n ->
-                        binary:part(Line0, 0, byte_size(Line0) - 1);
-                    _ ->
-                        Line0
-                end,
+        {ok, Line} ->
             Frame = decode_raw(Line, true),
             read_raw_fd(Fd, F, F(Frame, Acc));
         _ ->
             Acc
     end.
 
-decode_raw(Line, DecodeCanId) ->
+decode_raw(Line0, DecodeCanId) ->
+    Line =
+        case binary:last(Line0) of
+            $\n ->
+                binary:part(Line0, 0, byte_size(Line0) - 1);
+            _ ->
+                Line0
+        end,
     [TimeB, <<DirCh>>, CanIdB | Ds] =
         binary:split(Line, <<" ">>, [global,trim_all]),
     <<HrB:2/binary,$:,MinB:2/binary,$:,SecB:2/binary,$.,MsB:3/binary>> = TimeB,
