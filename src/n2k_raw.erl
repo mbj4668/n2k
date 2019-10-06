@@ -1,14 +1,18 @@
 %%% Decoder / encoder for Yacht Device's RAW format.
-%%%
-%%% Format:
-%%%     hh:mm:ss.ddd D msgid b0 b1 b2 b3 b4 b5 b6 b7<CR><LF>
-%%%   D is direction, 'R' or 'T'
-%%%   msgid is 29-bit canid in hex
-%%%   b0-b7 is data in hex
-
 -module(n2k_raw).
 -export([read_raw_file/1, read_raw_file/3]).
--export([decode_raw/2, encode_raw/1]).
+-export([decode_raw/1, encode_raw/1]).
+
+-export_type([line/0]).
+
+%% Each line represents one NMEA 2000 frame:
+%%
+%%   hh:mm:ss.ddd D msgid b0 b1 b2 b3 b4 b5 b6 b7<CR><LF>
+%%
+%%     D is direction, 'R' or 'T'
+%%     msgid is 29-bit canid in hex
+%%     b0-b7 is data in hex
+-type line() :: string().
 
 read_raw_file(FName) ->
     lists:reverse(
@@ -25,13 +29,14 @@ read_raw_file(FName, F, InitAcc) ->
 read_raw_fd(Fd, F, Acc) ->
     case file:read_line(Fd) of
         {ok, Line} ->
-            Frame = decode_raw(Line, true),
+            Frame = decode_raw(Line),
             read_raw_fd(Fd, F, F(Frame, Acc));
         _ ->
             Acc
     end.
 
-decode_raw(Line0, DecodeCanId) ->
+-spec decode_raw(line()) -> n2k:frame().
+decode_raw(Line0) ->
     Line =
         case binary:last(Line0) of
             $\n ->
@@ -49,11 +54,7 @@ decode_raw(Line0, DecodeCanId) ->
     Dir = decode_raw_dir(DirCh),
     CanId = binary_to_integer(CanIdB, 16),
     Data = list_to_binary([binary_to_integer(D, 16) || D <- Ds]),
-    Id = if DecodeCanId ->
-                 n2k:decode_canid(CanId);
-            true ->
-                 CanId
-         end,
+    Id = n2k:decode_canid(CanId),
     Milliseconds = ((((Hr*60 + Min) * 60) + Sec) * 1000) + Ms,
     {Milliseconds, Dir, Id, Data}.
 
