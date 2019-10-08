@@ -132,7 +132,7 @@ format_enums(Enums) ->
     ["case Val of ",
      lists:map(fun({Enum, V}) ->
                        [integer_to_list(V), "->",
-                        $", Enum, $", $;]
+                        "<<\"", Enum, "\">>", $;]
                end, Enums),
      "_ -> undefined end"].
 

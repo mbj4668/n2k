@@ -1,6 +1,7 @@
 %%% Original code by Tony Rogvall <tony@rogvall.se>
 %%% @copyright (C) 2015, Tony Rogvall
 %%% Modified by Martin Björklund
+%%%   - new interface
 -module(gen_pgns_term).
 -export([gen/1]).
 
@@ -43,7 +44,8 @@ write_header(Fd, InFile) ->
     io:format(Fd, "\n\n", []).
 
 write_as_term(Fd, [{PGN,Info}|Ps]) ->
-    io:format(Fd, "~p.\n", [{PGN, Info}]),
+    Info1 = patch_info(PGN, Info),
+    io:format(Fd, "~p.\n", [{PGN, Info1}]),
     write_as_term(Fd, Ps);
 write_as_term(_Fd, []) ->
     ok.
@@ -240,3 +242,23 @@ list_to_number(Value) ->
         {_Int,_F=[$.|_]} ->
             list_to_float(Value)
     end.
+
+patch_info(129038, Info) ->
+    %% The definition of this message is not correct.  Its length is
+    %% 28, but on the network the size is 27.  We solve this by
+    %% removing the last field, but that is proably not correct;
+    %% that's the sequence id.
+    remove_last_field(Info);
+patch_info(129810, Info) ->
+    %% The definition of this message is not correct.  Its length is
+    %% 34, but the fields add up to length 35.  The length observed on
+    %% the network is 34.  We solve this by removing the last field,
+    %% but that is proably not correct; that's the sequence id.
+    remove_last_field(Info);
+patch_info(_, Info) ->
+    Info.
+
+remove_last_field(Info) ->
+    {fields, Fs0} = lists:keyfind(fields, 1, Info),
+    Fs1 = lists:reverse(tl(lists:reverse(Fs0))),
+    lists:keyreplace(fields, 1, Info, {fields, Fs1}).

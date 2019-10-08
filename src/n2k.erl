@@ -52,7 +52,12 @@ decode_canid(CanId) ->
 
 decode_string_a(Bin) ->
     case binary:last(Bin) of
-        Ch when Ch == 0; Ch == 16#ff; Ch == $\s; Ch == $@ ->
+        0 ->
+            %% remove all fill chars - can't use NUL in re:run :(
+            %% we assume that 0 isn't used in the middle of the string...
+            [Bin0 | _] = string:split(Bin, <<0>>),
+            Bin0;
+        Ch when Ch == 16#ff; Ch == $\s; Ch == $@ ->
             %% remove all fill chars
             {match, [{Pos, _End}]} = re:run(Bin, [Ch, $+, $$]),
             binary:part(Bin, 0, Pos);
