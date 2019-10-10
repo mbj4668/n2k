@@ -248,17 +248,24 @@ patch_info(129038, Info) ->
     %% 28, but on the network the size is 27.  We solve this by
     %% removing the last field, but that is proably not correct;
     %% that's the sequence id.
-    remove_last_field(Info);
+    %% We are conservative for now and remove the last 3 fields, which we
+    %% don't care about anyway.
+    remove_last_fields(Info, 3);
+patch_info(129809, Info) ->
+    %% We are conservative for now and remove the last 3 fields, which we
+    %% don't care about anyway.
+    remove_last_fields(Info, 3);
 patch_info(129810, Info) ->
     %% The definition of this message is not correct.  Its length is
     %% 34, but the fields add up to length 35.  The length observed on
-    %% the network is 34.  We solve this by removing the last field,
-    %% but that is proably not correct; that's the sequence id.
-    remove_last_field(Info);
+    %% the network is 34.
+    %% We are conservative for now and remove the last 5 fields, which we
+    %% don't care about anyway.
+    remove_last_fields(Info, 5);
 patch_info(_, Info) ->
     Info.
 
-remove_last_field(Info) ->
+remove_last_fields(Info, N) ->
     {fields, Fs0} = lists:keyfind(fields, 1, Info),
-    Fs1 = lists:reverse(tl(lists:reverse(Fs0))),
+    Fs1 = lists:sublist(Fs0, length(Fs0) - N),
     lists:keyreplace(fields, 1, Info, {fields, Fs1}).
