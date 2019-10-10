@@ -6,5 +6,5 @@ for i in *.csv; do
     echo "------------"
     /home/mbj/src/canboat/rel/linux-x86_64/analyzer -q  < $i
     echo "----"
-    n2k -f pretty $i
+    ../bin/n2k -f pretty $i
 done
