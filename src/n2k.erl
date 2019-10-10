@@ -114,14 +114,15 @@ hex(X) ->
 fmt_nmea_packet({Time, Src, PGN, {Name, Data}}) ->
     Fs =
         try [lists:flatten(fmt_field(F)) || F <- Data]
-        catch _:_ ->
+        catch _:_X:S ->
+                io:format("**ERRRO: ~p\n~p\n", [_X, S]),
                 [io_lib:format("** DATA: ~p", [Data])]
         end,
     io_lib:format("~s   ~3w    ~7w ~w: ~s\n",
                   [fmt_ms_time(Time), Src, PGN, Name,
                    string:join(Fs, "; ")]).
 
-fmt_field({Name, Val, Units}) ->
+fmt_field({Name, {Val, Units}}) ->
     [atom_to_list(Name), " = ", fmt_val(Val, Units)];
 fmt_field({Name, Val}) ->
     [atom_to_list(Name), " = ", io_lib:format("~999p", [Val])].
@@ -137,8 +138,10 @@ fmt_val(Val, Units) ->
             io_lib:format("~.1f deg", [Val * 180 / math:pi()]);
         undefined ->
             io_lib:format("~999p", [Val]);
+        str ->
+            io_lib:format("~p", [Val]);
         _ ->
-            io_lib:format("~999p ~w", [Val, Units])
+            io_lib:format("~999p ~p", [Val, Units])
     end.
 
 

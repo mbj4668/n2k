@@ -507,21 +507,21 @@ format_binding(F,_Last,{PGN, PGNId}) ->
                         undefined ->
                             case proplists:get_value(type,F) of
                                 string_a ->
-                                    ["{",ID,",n2k:decode_string_a(",
-                                     Var,")}"];
+                                    ["{",ID,",{n2k:decode_string_a(",
+                                     Var,"),str}}"];
                                 _ ->
-                                    ["{",ID,",",Var,",",Units,"}"]
+                                    ["{",ID,",{",Var,",",Units,"}}"]
                             end;
                         _Enums ->
                             ["{",ID,",",format_enum_var(PGN, PGNId,
                                                         ID, Var),"}"]
                     end;
                 Resolution when is_integer(Resolution)->
-                    ["{",ID,",",Var,"*",
-                     integer_to_list(Resolution),",",Units,"}"];
+                    ["{",ID,",{",Var,"*",
+                     integer_to_list(Resolution),",",Units,"}}"];
                 Resolution when is_float(Resolution)->
-                    ["{",ID,",",Var,"*",
-                     float_to_list(Resolution),",",Units,"}"]
+                    ["{",ID,",{",Var,"*",
+                     float_to_list(Resolution),",",Units,"}}"]
             end;
         Match ->
             ID = get_id(F),
