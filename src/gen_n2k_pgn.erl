@@ -62,19 +62,22 @@ write_header(Fd, InFile) ->
     io:format(Fd, "-module(~p).\n", [ModName]),
     io:format(Fd, "-export([is_fast/1]).\n", []),
     io:format(Fd, "-export([decode/2]).\n", []),
+    io:format(Fd, "-export([type_info/2]).\n", []),
     io:format(Fd, "\n\n", []).
 
 write_functions(Fd, Ps) ->
+    %% Some PGNs exist in more than one variant; pick the one with
+    %% longest message length in order to determine if it is fast or
+    %% not.
     Ls = [{PGN,proplists:get_value(length,Fs,8)} || {PGN,Fs} <- Ps],
     Ls1 = lists:usort(Ls),
     Ls2 = group_length(Ls1),
     Ls3 = [{P, lists:max(Ln)} || {P,Ln} <- Ls2],
     write_is_fast(Fd, Ls3, Ps),
     io:format(Fd, "\n\n", []),
-    Enums = get_enums(Ps),
-    write_enums(Fd, lists:usort(Enums)),
+    write_decode(Fd, Ps),
     io:format(Fd, "\n\n", []),
-    write_decode(Fd, Ps).
+    write_type_info(Fd, Ps).
 
 group_length([{P,L}|Ls]) ->
     group_length(Ls, P, [L], []).
@@ -98,43 +101,6 @@ emit_is_fast_(Fd, {PGN,Length}, Term, Ps) ->
     Repeating = proplists:get_value(repeating_fields, Fs, 0),
     io:format(Fd, "is_fast(~p) -> ~w~s\n",
               [PGN,(Length > 8) orelse (Repeating =/= 0),Term]).
-
-get_enums([{PGN, Info} | T]) ->
-    PGNId = proplists:get_value(id, Info),
-    get_fields_enums(proplists:get_value(fields,Info,[]), PGN, PGNId, T);
-get_enums([]) ->
-    [].
-
-get_fields_enums([F|Fs], PGN, PGNId, T) ->
-    case proplists:get_value(enums, F) of
-        undefined ->
-            get_fields_enums(Fs, PGN, PGNId, T);
-        Enums ->
-            [{PGN, PGNId, proplists:get_value(id, F), Enums} |
-             get_fields_enums(Fs, PGN, PGNId, T)]
-    end;
-get_fields_enums([], _PGN, _PGNId, T) ->
-    get_enums(T).
-
-%% generate the enum function
-write_enums(Fd, [{PGN, PGNId, EnumId, Enums}]) ->
-    emit_enums(Fd, PGN, PGNId, EnumId, Enums, ".");
-write_enums(Fd, [{PGN, PGNId, EnumId, Enums} | T]) ->
-    emit_enums(Fd, PGN, PGNId, EnumId, Enums, ";"),
-    write_enums(Fd, T).
-
-emit_enums(Fd, PGN, PGNId, EnumId, Enums, Term) ->
-    io:format(Fd, "enum(~p, ~s, ~s, Val) -> ~s~s\n",
-              [PGN, maybe_quote(PGNId), maybe_quote(EnumId),
-               format_enums(Enums), Term]).
-
-format_enums(Enums) ->
-    ["case Val of ",
-     lists:map(fun({Enum, V}) ->
-                       [integer_to_list(V), "->",
-                        "<<\"", Enum, "\">>", $;]
-               end, Enums),
-     "_ -> undefined end"].
 
 %% generate the decode function
 %% FIXME! repeating field need extra function to parse tail!
@@ -174,8 +140,6 @@ write_decode(Fd, PGN, Info, Term) ->
         Repeat =:= [] ->
             {FixedMatches, FixedBindings, FixedGuards} =
                 format_fields(Fixed, PGN, post),
-%            io:format("fixed: ~p\n", [lists:last(Fixed)]),
-%            io:format("xxxxx: ~p\n", [lists:last(FixedMatches)]),
             io:format(Fd, "decode(~p,<<~s,_/bitstring>>) ~s ->\n"
                           "~s {~s,[~s]}~s\n",
                       [PGN,
@@ -489,48 +453,22 @@ filter_reserved(Fs) ->
                         end
                 end, [], Fs).
 
-format_binding(F,_Last,{PGN, PGNId}) ->
+format_binding(F,_Last,_) ->
     case proplists:get_value(match,F) of
         undefined ->
             ID = get_id(F),
             Var = get_var(F),
-            Units =
-                case proplists:get_value(units,F) of
-                    undefined ->
-                        "undefined";
-                    UnitsStr ->
-                        io_lib:write_atom(list_to_atom(UnitsStr))
-                end,
-            case proplists:get_value(resolution,F) of
-                undefined ->
-                    case proplists:get_value(enums,F) of
-                        undefined ->
-                            case proplists:get_value(type,F) of
-                                string_a ->
-                                    ["{",ID,",{n2k:decode_string_a(",
-                                     Var,"),str}}"];
-                                _ ->
-                                    ["{",ID,",{",Var,",",Units,"}}"]
-                            end;
-                        _Enums ->
-                            ["{",ID,",",format_enum_var(PGN, PGNId,
-                                                        ID, Var),"}"]
-                    end;
-                Resolution when is_integer(Resolution)->
-                    ["{",ID,",{",Var,"*",
-                     integer_to_list(Resolution),",",Units,"}}"];
-                Resolution when is_float(Resolution)->
-                    ["{",ID,",{",Var,"*",
-                     float_to_list(Resolution),",",Units,"}}"]
+            case proplists:get_value(type,F) of
+                string_a ->
+                    ["{",ID,",n2k:decode_string_a(",
+                     Var,")}"];
+                _ ->
+                    ["{",ID,",",Var,"}"]
             end;
         Match ->
             ID = get_id(F),
             ["{",ID,",",integer_to_list(Match),"}"]
     end.
-
-format_enum_var(PGN, PGNId, ID, Var) ->
-    ["{",Var,",enum(", integer_to_list(PGN), ",", PGNId, ",", ID, ",",
-     Var,")}"].
 
 %% works for both pgn info and fields
 get_id(F) ->
@@ -567,6 +505,109 @@ varname(Cs0=[C|Cs]) ->
        C >= $A, C =< $Z -> Cs0;
        true -> [$_|Cs0]
     end.
+
+write_type_info(Fd, Ps) ->
+    Tab = ets:new(a, []),
+    mk_type_info(Ps, Tab),
+    L = ets:tab2list(Tab),
+    write_type_info0(L, Fd),
+    write_enums(L, Fd).
+
+mk_type_info([{_PGN, Info} | T], Tab) ->
+    PGNId = proplists:get_value(id, Info),
+    Fs = proplists:get_value(fields, Info, []),
+    mk_type_info_fs(PGNId, Fs, Tab),
+    mk_type_info(T, Tab);
+mk_type_info([], _) ->
+    ok.
+
+mk_type_info_fs(PGNId, [[{order, _}, {id, IdStr} | T] | Fs], Tab) ->
+    Id = list_to_atom(IdStr),
+    case get_type(T) of
+        {enums, Enums} ->
+            TypeName =
+                case ets:lookup(Tab, {enums, Enums}) of
+                    [{_, TypeName0}] ->
+                        TypeName0;
+                    [] ->
+                        TypeName0 =
+                            case ets:match(Tab, {{enums, '_'}, Id}) of
+                                [] ->
+                                    Id;
+                                _ ->
+                                    list_to_atom(PGNId ++ [$_ | IdStr])
+                            end,
+                        ets:insert(Tab, {{enums, Enums}, TypeName0}),
+                        TypeName0
+                end,
+            ets:insert(Tab, {{PGNId, Id}, {enums, TypeName}});
+        {int, Len, Resolution, Decimals, Units} ->
+            ets:insert(Tab, {{PGNId, Id},
+                             {int, Len, Resolution, Decimals, Units}});
+        {float, Units} ->
+            ets:insert(Tab, {{PGNId, Id}, {float, Units}});
+        _ ->
+            ok
+    end,
+    mk_type_info_fs(PGNId, Fs, Tab);
+mk_type_info_fs(_, [], _) ->
+    ok.
+
+
+get_type(Info) ->
+    case proplists:get_value(enums, Info) of
+        undefined ->
+            Units =
+                list_to_atom(proplists:get_value(units, Info, "undefined")),
+            Resolution = proplists:get_value(resolution, Info),
+            Decimals =
+                if Resolution /= undefined ->
+                        round(math:log10(1/Resolution));
+                   true ->
+                        undefined
+                end,
+            Length = proplists:get_value(length, Info),
+            case proplists:get_value(type, Info) of
+                float ->
+                    {float, Units};
+                int ->
+                    Resolution1 =
+                        if Resolution == undefined ->
+                                1;
+                           true ->
+                                Resolution
+                        end,
+                    {int, Length, Resolution1, Decimals, Units};
+                _ when Resolution /= undefined ->
+                    {int, Length, Resolution, Decimals, Units};
+                _ ->
+                    undefined
+            end;
+        Enums ->
+            {enums, Enums}
+    end.
+
+write_type_info0([{{enums, _}, _} | T], Fd) ->
+    write_type_info0(T, Fd);
+write_type_info0([{{PGNId, Id}, {enums, TypeName}} | T], Fd) ->
+    io:format(Fd, "type_info(~s,~p) -> enums(~p);\n", [PGNId, Id, TypeName]),
+    write_type_info0(T, Fd);
+write_type_info0([{{PGNId, Id}, Type} | T], Fd) ->
+    io:format(Fd, "type_info(~s,~p) -> ~9999p;\n", [PGNId, Id, Type]),
+    write_type_info0(T, Fd);
+write_type_info0([], Fd) ->
+    io:format(Fd, "type_info(_,_) -> undefined.\n", []).
+
+write_enums([{{enums, Enums}, TypeName} | T], Fd) ->
+    io:format(Fd, "enums(~p) -> {enums, ~99999p};\n", [TypeName, Enums]),
+    write_enums(T, Fd);
+write_enums([_ | T], Fd) ->
+    write_enums(T, Fd);
+write_enums([], Fd) ->
+    io:format(Fd, "enums(_) -> [].\n", []).
+
+
+
 
 reserved_word("after") -> true;
 reserved_word("begin") -> true;

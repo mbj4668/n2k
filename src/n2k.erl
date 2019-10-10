@@ -113,37 +113,56 @@ hex(X) ->
 
 fmt_nmea_packet({Time, Src, PGN, {Name, Data}}) ->
     Fs =
-        try [lists:flatten(fmt_field(F)) || F <- Data]
+        try [lists:flatten(fmt_field(Name, F)) || F <- Data]
         catch _:_X:S ->
-                io:format("**ERRRO: ~p\n~p\n", [_X, S]),
+                io:format("**ERROR: ~p\n~p\n", [_X, S]),
                 [io_lib:format("** DATA: ~p", [Data])]
         end,
     io_lib:format("~s   ~3w    ~7w ~w: ~s\n",
                   [fmt_ms_time(Time), Src, PGN, Name,
                    string:join(Fs, "; ")]).
 
-fmt_field({Name, {Val, Units}}) ->
-    [atom_to_list(Name), " = ", fmt_val(Val, Units)];
-fmt_field({Name, Val}) ->
-    [atom_to_list(Name), " = ", io_lib:format("~999p", [Val])].
+fmt_field(PGN, {Name, Val}) ->
+    [atom_to_list(Name), " = ", fmt_val(PGN, Name, Val)].
 
-fmt_val(Val, Units) ->
-    case Units of
-        days ->
-            Date =
-                calendar:gregorian_days_to_date(
-                  calendar:date_to_gregorian_days({1970,1,1}) + Val),
-            fmt_date(Date);
-        rad ->
-            io_lib:format("~.1f deg", [Val * 180 / math:pi()]);
-        undefined ->
-            io_lib:format("~999p", [Val]);
-        str ->
-            io_lib:format("~p", [Val]);
+fmt_val(PGN, Name, Val) ->
+    case n2k_pgn:type_info(PGN, Name) of
+        {int, _Len, Resolution, Decimals, Units} ->
+            case Units of
+                days ->
+                    Date =
+                        calendar:gregorian_days_to_date(
+                          calendar:date_to_gregorian_days({1970,1,1}) + Val),
+                    fmt_date(Date);
+                rad ->
+                    io_lib:format("~.1f deg",
+                                  [Val*Resolution * 180 / math:pi()]);
+                'rad/s' ->
+                    io_lib:format("~.1f deg/s",
+                                  [Val*Resolution * 180 / math:pi()]);
+                _ when Decimals /= undefined ->
+                    [io_lib:format("~.*f", [Decimals, Val*Resolution]),
+                     fmt_units(Units)];
+                _ ->
+                    [io_lib:format("~p", [Val]), fmt_units(Units)]
+            end;
+        {float, Units} ->
+            [io_lib:format("~.5f", [Val]), fmt_units(Units)];
+        {enums, Enums} ->
+            case lists:keyfind(Val, 2, Enums) of
+                {Str, _} ->
+                    Str;
+                _ ->
+                    integer_to_list(Val)
+            end;
         _ ->
-            io_lib:format("~999p ~p", [Val, Units])
+            io_lib:format("~999p", [Val])
     end.
 
+fmt_units(undefined) ->
+    "";
+fmt_units(Units) ->
+    [$\s | atom_to_list(Units)].
 
 decode_nmea_init() ->
     #{}.
