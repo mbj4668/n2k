@@ -251,6 +251,10 @@ patch_info(129038, Info) ->
     %% We are conservative for now and remove the last 3 fields, which we
     %% don't care about anyway.
     remove_last_fields(Info, 3);
+patch_info(129040, Info) ->
+    patch_type_of_ship(Info);
+patch_info(129794, Info) ->
+    patch_type_of_ship(Info);
 patch_info(129809, Info) ->
     %% We are conservative for now and remove the last 3 fields, which we
     %% don't care about anyway.
@@ -261,7 +265,9 @@ patch_info(129810, Info) ->
     %% the network is 34.
     %% We are conservative for now and remove the last 5 fields, which we
     %% don't care about anyway.
-    remove_last_fields(Info, 5);
+    remove_last_fields(patch_type_of_ship(Info), 5);
+patch_info(130842, Info) ->
+    patch_type_of_ship(Info);
 patch_info(_, Info) ->
     Info.
 
@@ -269,3 +275,87 @@ remove_last_fields(Info, N) ->
     {fields, Fs0} = lists:keyfind(fields, 1, Info),
     Fs1 = lists:sublist(Fs0, length(Fs0) - N),
     lists:keyreplace(fields, 1, Info, {fields, Fs1}).
+
+patch_type_of_ship(Info) ->
+    %% typeOfShip definition is incomplete.
+    %% See ITU-R M.1371-5
+    %% https://api.vtexplorer.com/docs/ref-aistypes.html
+    %% https://help.marinetraffic.com/hc/en-us/articles/\
+    %% 205579997-What-is-the-significance-of-the-AIS-Shiptype-number-
+    {fields, Fs0} = lists:keyfind(fields, 1, Info),
+    Fs1 = lists:map(
+            fun(Field) ->
+                    case lists:member({id,"typeOfShip"}, Field) of
+                        true ->
+                            patch_type_of_ship_field(Field);
+                        false ->
+                            Field
+                    end
+            end, Fs0),
+    lists:keyreplace(fields, 1, Info, {fields, Fs1}).
+
+patch_type_of_ship_field(Field) ->
+    lists:map(
+      fun({enums, _}) ->
+              {enums, type_of_ship_enums()};
+         (Param) ->
+              Param
+      end, Field).
+
+type_of_ship_enums() ->
+    %% all other values are Reserved
+    [{"unavailable",0},
+     {"Wing In Ground",20},
+     {"Wing In Ground hazard cat X",21},
+     {"Wing In Ground hazard cat Y",22},
+     {"Wing In Ground hazard cat Z",23},
+     {"Wing In Ground hazard cat OS",24},
+     {"Wing In Ground (no other information)",29},
+     {"Fishing",30},
+     {"Towing",31},
+     {"Towing exceeds 200m or wider than 25m",32},
+     {"Engaged in dredging or underwater operations",33},
+     {"Engaged in diving operations",34},
+     {"Engaged in military operations",35},
+     {"Sailing",36},
+     {"Pleasure",37},
+     {"High speed craft",40},
+     {"High speed craft hazard cat X",41},
+     {"High speed craft hazard cat Y",42},
+     {"High speed craft hazard cat Z",43},
+     {"High speed craft hazard cat OS",44},
+     {"High speed craft (no additional information)",49},
+     {"Pilot vessel",50},
+     {"SAR",51},
+     {"Tug",52},
+     {"Port tender",53},
+     {"Anti-pollution",54},
+     {"Law enforcement",55},
+     {"Spare",56},
+     {"Spare #2",57},
+     {"Medical",58},
+     {"RR Resolution No.18",59},
+     {"Passenger ship",60},
+     {"Passenger ship hazard cat X",61},
+     {"Passenger ship hazard cat Y",62},
+     {"Passenger ship hazard cat Z",63},
+     {"Passenger ship hazard cat OS",64},
+     {"Passenger ship (no additional information)",69},
+     {"Cargo ship",70},
+     {"Cargo ship hazard cat X",71},
+     {"Cargo ship hazard cat Y",72},
+     {"Cargo ship hazard cat Z",73},
+     {"Cargo ship hazard cat OS",74},
+     {"Cargo ship (no additional information)",79},
+     {"Tanker",80},
+     {"Tanker hazard cat X",81},
+     {"Tanker hazard cat Y",82},
+     {"Tanker hazard cat Z",83},
+     {"Tanker hazard cat OS",84},
+     {"Tanker (no additional information)",89},
+     {"Other",90},
+     {"Other hazard cat X",91},
+     {"Other hazard cat Y",92},
+     {"Other hazard cat Z",93},
+     {"Other hazard cat OS",94},
+     {"Other (no additional information)",99}].
