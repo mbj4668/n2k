@@ -159,7 +159,10 @@ write_decode(Fd, PGN, Info, Term) ->
                 format_fields(Repeat, PGN, pre),
             io:format(Fd, "decode(~p,<<~s,_Repeat/bitstring>>) ~s ->\n"
                       "~s {~s,[~s | "
-                      "lists:append([ [~s] || <<~s>> <= _Repeat ~s])]}~s\n",
+%% FIXME - the repeat handling code is not correct
+%                      "lists:append([ [~s] || <<~s>> <= _Repeat ~s])]"
+                      "[]]"
+                      "}~s\n",
                       [PGN,
                        FixedMatches,
                        if FixedGuards == [] -> "";
@@ -169,10 +172,10 @@ write_decode(Fd, PGN, Info, Term) ->
                        ID,
                        catmap(fun format_binding/3,filter_reserved(Fixed),
                               {PGN, ID}, ","),
-                       catmap(fun format_binding/3,filter_reserved(Repeat),
-                              {PGN, ID}, ","),
-                       RepeatMatches,
-                       RepeatBindings,
+%                       catmap(fun format_binding/3,filter_reserved(Repeat),
+%                              {PGN, ID}, ","),
+%                       RepeatMatches,
+%                       RepeatBindings,
                        Term])
     end.
 
