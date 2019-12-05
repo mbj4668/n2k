@@ -2,6 +2,9 @@
 %% -*- erlang -*-
 %%! -noinput
 
+%% Reads 'raw', 'csv' and 'dat' files, and converts
+%% to 'csv' or pretty text.
+%%
 %% Usage: n2k [-f csv | pretty] [-o OutFile] InFile
 %%  Default outformat is 'pretty'
 
@@ -11,6 +14,7 @@ main(Args) ->
 
     try
         A = parse_args(Args, #{fmt => pretty}),
+        Fmt = maps:get(fmt, A),
         InFName =
             case maps:find(infname, A) of
                 {ok, V} ->
@@ -20,12 +24,12 @@ main(Args) ->
             end,
         InFmt =
             case guess_format(InFName) of
-                raw ->
-                    raw;
-                csv ->
-                    csv;
                 unknown ->
-                    throw(unknown_format)
+                    throw(unknown_format);
+                dat when Fmt == csv ->
+                    throw({cannot_convert_dat_to_csv});
+                InFmt0 ->
+                    InFmt0
             end,
         {CloseF, WriteF} =
             case maps:find(outfname, A) of
@@ -39,23 +43,30 @@ main(Args) ->
                     {fun() -> ok end,
                      fun(Bin) -> io:fwrite("~s", [Bin]) end}
             end,
+        PrettyF =
+            fun(Packet) ->
+                    Str = n2k:fmt_nmea_packet(Packet),
+                    WriteF(Str)
+            end,
         {OutF, OutFInitState} =
-            case maps:get(fmt, A) of
-                csv when A == undefined ->
-                    {fun(_, _) -> ok end, []};
+            case Fmt of
                 csv ->
                     {fun(Frame, _) ->
                              WriteF(n2k_csv:encode_csv(Frame))
                      end,
                      []};
+                pretty when InFmt == dat ->
+                    {fun({_Time, 0, -1, _Data} = SrvRec, _) ->
+                             n2k_dat:fmt_service_record(SrvRec);
+                        ({Time, Src, PGN, Data}, _) ->
+                             Packet = {Time, Src, PGN,
+                                       n2k_pgn:decode(PGN, Data)},
+                             PrettyF(Packet)
+                     end,
+                     []};
                 pretty ->
-                    PrettyF =
-                        fun(Packet) ->
-                                Str = n2k:fmt_nmea_packet(Packet),
-                                WriteF(Str)
-                        end,
-                    {fun(Frame, State) ->
-                             case n2k:decode_nmea(Frame, State) of
+                    {fun(Frame, State0) ->
+                             case n2k:decode_nmea(Frame, State0) of
                                  {true, Packet, State1} ->
                                      PrettyF(Packet),
                                      State1;
@@ -74,14 +85,18 @@ main(Args) ->
                 raw ->
                     n2k_raw:read_raw_file(InFName, OutF, OutFInitState);
                 csv ->
-                    n2k_csv:read_csv_file(InFName, OutF, OutFInitState)
+                    n2k_csv:read_csv_file(InFName, OutF, OutFInitState);
+                dat ->
+                    n2k_dat:read_dat_file(InFName, OutF, OutFInitState)
             end
         after
             CloseF()
         end
     catch
-        _:_Error:StackTrace ->
-            io:format("** ~p\n  ~p\n", [_Error, StackTrace]),
+        throw:help ->
+            usage();
+        _:_Error:_StackTrace ->
+            io:format("** ~p\n  ~p\n", [_Error, _StackTrace]),
             usage()
     end.
 
@@ -126,6 +141,8 @@ parse_args(["-f", Fmt | T], A) ->
     end;
 parse_args(["-o", OutFName | T], A) ->
     parse_args(T, A#{outfname => OutFName});
+parse_args(["-h" | _], _A) ->
+    throw(help);
 parse_args([InFName], A) ->
     A#{infname => InFName};
 parse_args([H | _], _A) ->
@@ -136,16 +153,22 @@ parse_args([], A) ->
 guess_format(FName) ->
     {ok, Fd} = file:open(FName, [read, raw, binary, read_ahead]),
     try
-        {ok, Line} = file:read_line(Fd),
-        case binary:split(Line, <<" ">>, [global,trim_all]) of
-            [_TimeB, <<_DirCh>>, _CanIdB | _] ->
-                raw;
+        case file:read(Fd, 10) of
+            {ok, <<_,_,16#ff,16#ff,16#ff,16#ff,$Y,$D,$V,$R>>} ->
+                dat;
             _ ->
-                case binary:split(Line, <<",">>, [global,trim_all]) of
-                    [_TimeB, _PriB, _PGNB, _SrcB, _DstB, _SzB | _] ->
-                        csv;
+                file:position(Fd, 0),
+                {ok, Line} = file:read_line(Fd),
+                case binary:split(Line, <<" ">>, [global,trim_all]) of
+                    [_TimeB, <<_DirCh>>, _CanIdB | _] ->
+                        raw;
                     _ ->
-                        unknown
+                        case binary:split(Line, <<",">>, [global,trim_all]) of
+                            [_TimeB, _PriB, _PGNB, _SrcB, _DstB, _SzB | _] ->
+                                csv;
+                            _ ->
+                                unknown
+                        end
                 end
         end
     catch

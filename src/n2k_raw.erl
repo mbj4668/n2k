@@ -1,23 +1,32 @@
 %%% Decoder / encoder for Yacht Device's RAW format.
+%%%
+%%% Each line represents one NMEA 2000 frame.
+%%%
+%%% Format:
+%%%   hh:mm:ss.ddd D msgid b0 b1 b2 b3 b4 b5 b6 b7<CR><LF>
+%%%
+%%%     D is direction, 'R' or 'T'
+%%%     msgid is 29-bit canid in hex
+%%%     b0-b7 is data in hex
 -module(n2k_raw).
+
 -export([read_raw_file/1, read_raw_file/3]).
 -export([decode_raw/1, encode_raw/1]).
 
 -export_type([line/0]).
 
-%% Each line represents one NMEA 2000 frame:
-%%
-%%   hh:mm:ss.ddd D msgid b0 b1 b2 b3 b4 b5 b6 b7<CR><LF>
-%%
-%%     D is direction, 'R' or 'T'
-%%     msgid is 29-bit canid in hex
-%%     b0-b7 is data in hex
 -type line() :: string().
 
+-spec read_raw_file(FileName :: string()) ->
+          [n2k:frame()].
 read_raw_file(FName) ->
     lists:reverse(
       read_raw_file(FName, fun(Frame, Acc) -> [Frame | Acc] end, [])).
 
+-spec read_raw_file(FileName :: string(),
+                    fun((n2k:frame(), Acc0 :: term()) -> Acc1 :: term()),
+                    InitAcc :: term()) ->
+          Acc :: term().
 read_raw_file(FName, F, InitAcc) ->
     {ok, Fd} = file:open(FName, [read, raw, binary, read_ahead]),
     try
@@ -61,6 +70,7 @@ decode_raw(Line0) ->
 decode_raw_dir($\R) -> rx;
 decode_raw_dir($\T) -> tx.
 
+-spec encode_raw(n2k:frame()) -> line().
 encode_raw({Time, Dir, CanId, Data}) ->
     [n2k:fmt_ms_time(Time), $\s, fmt_raw_dir(Dir), $\s,
      fmt_raw_canid(CanId), $\s, fmt_raw_data(Data),
