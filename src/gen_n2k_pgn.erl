@@ -216,19 +216,10 @@ catmap(Fun, [F|Fs], Arg, Sep) ->
 
 format_fields(Fs, _PGN, PreOrPost) ->
     {Matches0, FVars0} = field_matches(Fs, 0, 0, [], [], []),
-%    io:format("PGN ~p\n-------------\n~p\n~p\n",
-%              [PGN, Matches0,
-%               [{proplists:get_value(id, F), Vs} || {F, Vs} <- FVars0]]),
     {Matches1, FVars1} = replace_bytes(Matches0, FVars0, [], []),
-%    io:format("PASS2\n~p\n~p\n",
-%              [Matches1,
-%               [{proplists:get_value(id, F), Vs} || {F, Vs} <- FVars1]]),
     {Matches2, FVars2} = replace_single_var(FVars1, Matches1, []),
     {FVarsGuards, FVars3} =
         lists:partition(fun({F, _}) -> is_matching_field(F) end, FVars2),
-%    io:format("PASS3\n~p\n~p}\n\n",
-%              [Matches2,
-%               [{proplists:get_value(id, F), Vs} || {F, Vs} <- FVars2]]),
     {format_matches(Matches2),
      format_field_variables(FVars3, PreOrPost),
      format_guard_matches(FVarsGuards)}.
