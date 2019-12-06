@@ -2,11 +2,11 @@
 
 -export([encode_canid/1, decode_canid/1]).
 -export([decode_nmea_init/0, decode_nmea/2, fmt_error/1]).
--export([fmt_nmea_packet/1]).
+-export([fmt_nmea_message/1]).
 -export([decode_string_a/1, decode_string/2]).
 -export([fmt_ms_time/1, fmt_date/1, fmt_hex/2]).
 
--export_type([canid/0, frame/0, packet/0, dec_error/0, dec_state/0]).
+-export_type([canid/0, frame/0, message/0, dec_error/0, dec_state/0]).
 
 %% A CANID is a 29-bit number.  When decoded, it is a canid().
 -type canid() ::
@@ -17,27 +17,30 @@
         , Dst :: byte() % dst device of message, 16#ff means all
         }.
 
+%% Represents one CAN frame, with additional meta data (time)
 -type frame() ::
         {
           Time :: integer() % milliseconds
-        , Dir  :: 'rx' | 'tx'
         , Id   :: canid()
         , Data :: binary() % 0-8 bytes
         }.
 
--type packet() ::
+%% Represents one NMEA message, with additional meta data (time)
+-type message() ::
         {
           Time :: integer() % milliseconds
-        , Src  :: byte()
-        , PGN  :: integer()
+        , Id   :: canid()
         , Data :: {PGNName :: atom()
                  , Fields :: [{FieldName :: atom(), Val :: term()}]}
         }.
 
 -type dec_error() ::
-        {pgn_not_found, Src :: byte(), PGN :: integer()}
-      | {decode_error, Src :: byte(), PGN :: integer()}
-      | {packet_loss, Src :: byte(), PGN :: integer(), PrevIndex :: integer()}.
+        %% the (generated) pgn decode function failed to decode the
+        %% message
+        {pgn_decode_error, Src :: byte(), PGN :: integer()}
+        %% a fast packet frame was received but the previous frame was
+        %% not found
+      | {frame_loss, Src :: byte(), PGN :: integer(), PrevIndex :: integer()}.
 
 -opaque dec_state() :: map().
 
@@ -64,34 +67,33 @@ decode_nmea_init() ->
     #{}.
 
 -spec decode_nmea(n2k:frame(), dec_state()) ->
-          {true, n2k:packet(), dec_state()}
+          {true, n2k:message(), dec_state()}
         | {false, dec_state()}
         | {error, dec_error(), dec_state()}.
 %% Call this repeatedly with frames and a decode state.
-%% When a packet has been assembled, {true, Packet, State1} is
+%% When a message has been assembled, {true, Message, State1} is
 %% returned.
-%% If the frame is part of a multi-frame packet, {false, Stat1} is
+%% If the frame is part of a fast packet message, {false, Stat1} is
 %% returned.
 %% If there's an error, {error, DecError, State1} is returned.
 decode_nmea(Frame, Map0) ->
-    {Time, _Dir, Id, Data} = Frame,
+    {Time, Id, Data} = Frame,
     {_Prio, PGN, Src, _Dst} = Id,
     try n2k_pgn:is_fast(PGN) of
         false ->
-            Packet = {Time, Src, PGN, n2k_pgn:decode(PGN, Data)},
-            {true, Packet, Map0};
+            Message = {Time, Id, n2k_pgn:decode(PGN, Data)},
+            {true, Message, Map0};
         true ->
             case Data of
                 <<Order:3,0:5,PLen,PayLoad/binary>> ->
-                    %% this is the first of the fast packets, store for assembly
+                    %% this is the first of the fast messages, store
+                    %% for assembly
                     P = {Order, _Index = 0, PLen-size(PayLoad), [PayLoad]},
                     Map1 = maps:put({Src, PGN}, P, Map0),
                     {false, Map1};
                 <<Order:3,Index:5,PayLoad/binary>> ->
                     PrevIndex = Index-1,
                     case maps:find({Src,PGN}, Map0) of
-                        error ->
-                            {error, {pgn_not_found, Src, PGN}, Map0};
                         {ok, {Order, PrevIndex, PLen0, Data0}} ->
                             Data1 = [PayLoad | Data0],
                             case PLen0 - size(PayLoad) of
@@ -105,35 +107,33 @@ decode_nmea(Frame, Map0) ->
                                         list_to_binary(lists:reverse(Data1)),
                                     Map1 = maps:remove({Src, PGN}, Map0),
                                     try
-                                        Packet = {Time, Src, PGN,
+                                        Message = {Time, Id,
                                                   n2k_pgn:decode(PGN, Data2)},
-                                        {true, Packet, Map1}
+                                        {true, Message, Map1}
                                     catch
                                         _:_X:Stacktrace ->
                                             io:format("** error: ~p ~p\n",
                                                       [_X, Stacktrace]),
                                             {error,
-                                             {decode_error, Src, PGN}, Map0}
+                                             {pgn_decode_error, Src, PGN}, Map0}
                                     end
                             end;
-                        {ok, _P} ->
-                            {error, {packet_loss, Src, PGN, PrevIndex}, Map0}
+                        _ ->
+                            {error, {frame_loss, Src, PGN, PrevIndex}, Map0}
                     end
             end
     catch
         error:_X:Stacktrace ->
             io:format("** error: ~p ~p\n", [_X, Stacktrace]),
-            Packet = {Time, Src, PGN,
+            Message = {Time, Id,
                       {unknown, [{unknown, binary_to_list(Data)}]}},
-            {true, Packet, Map0}
+            {true, Message, Map0}
     end.
 
--spec fmt_error(dec_state()) -> string().
-fmt_error({pgn_not_found, Src, PGN}) ->
-    io_lib:format("warning: pgn ~w:~w not found\n", [Src,PGN]);
-fmt_error({packet_loss, Src, PGN, PrevIndex}) ->
-    io_lib:format("warning: pgn ~w:~w, packet lost ~w\n", [Src,PGN,PrevIndex]);
-fmt_error({decode_error, Src, PGN}) ->
+-spec fmt_error(dec_error()) -> string().
+fmt_error({frame_loss, Src, PGN, PrevIndex}) ->
+    io_lib:format("warning: pgn ~w:~w, frame lost ~w\n", [Src,PGN,PrevIndex]);
+fmt_error({pgn_decode_error, Src, PGN}) ->
     io_lib:format("warning: pgn ~w:~w, could not decode\n", [Src,PGN]).
 
 decode_string_a(Bin) ->
@@ -172,16 +172,16 @@ decode_string(string, <<_Unknown,Rest/binary>>) ->
     {<<>>, Rest}.
 
 
--spec fmt_nmea_packet(packet()) -> string().
-fmt_nmea_packet({Time, Src, PGN, {Name, Fields}}) ->
+-spec fmt_nmea_message(message()) -> string().
+fmt_nmea_message({Time, {Pri, PGN, Src, Dst}, {MsgName, Fields}}) ->
     Fs =
-        try [lists:flatten(fmt_field(Name, F)) || F <- Fields]
+        try [lists:flatten(fmt_field(MsgName, F)) || F <- Fields]
         catch _:_X:S ->
                 io:format("**ERROR: ~p\n~p\n", [_X, S]),
                 [io_lib:format("** FIELDS: ~p", [Fields])]
         end,
-    io_lib:format("~s   ~3w    ~7w ~w: ~s\n",
-                  [fmt_ms_time(Time), Src, PGN, Name,
+    io_lib:format("~s ~w ~3w ~3w ~6w ~w: ~s\n",
+                  [fmt_ms_time(Time), Pri, Src, Dst, PGN, MsgName,
                    string:join(Fs, "; ")]).
 
 fmt_ms_time(Milliseconds) ->

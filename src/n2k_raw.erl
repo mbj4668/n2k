@@ -11,11 +11,13 @@
 -module(n2k_raw).
 
 -export([read_raw_file/1, read_raw_file/3]).
--export([decode_raw/1, encode_raw/1]).
+-export([decode_raw/1, encode_raw/2]).
 
 -export_type([line/0]).
 
 -type line() :: string().
+
+-type dir() :: 'rx' | 'tx'.
 
 -spec read_raw_file(FileName :: string()) ->
           [n2k:frame()].
@@ -38,13 +40,13 @@ read_raw_file(FName, F, InitAcc) ->
 read_raw_fd(Fd, F, Acc) ->
     case file:read_line(Fd) of
         {ok, Line} ->
-            Frame = decode_raw(Line),
+            {Frame, _Dir} = decode_raw(Line),
             read_raw_fd(Fd, F, F(Frame, Acc));
         _ ->
             Acc
     end.
 
--spec decode_raw(line()) -> n2k:frame().
+-spec decode_raw(Line :: binary()) -> {n2k:frame(), dir()}.
 decode_raw(Line0) ->
     Line =
         case binary:last(Line0) of
@@ -65,13 +67,13 @@ decode_raw(Line0) ->
     Data = list_to_binary([binary_to_integer(D, 16) || D <- Ds]),
     Id = n2k:decode_canid(CanId),
     Milliseconds = ((((Hr*60 + Min) * 60) + Sec) * 1000) + Ms,
-    {Milliseconds, Dir, Id, Data}.
+    {{Milliseconds, Id, Data}, Dir}.
 
 decode_raw_dir($\R) -> rx;
 decode_raw_dir($\T) -> tx.
 
--spec encode_raw(n2k:frame()) -> line().
-encode_raw({Time, Dir, CanId, Data}) ->
+-spec encode_raw(n2k:frame(), dir()) -> line().
+encode_raw({Time, CanId, Data}, Dir) ->
     [n2k:fmt_ms_time(Time), $\s, fmt_raw_dir(Dir), $\s,
      fmt_raw_canid(CanId), $\s, fmt_raw_data(Data),
      $\r, $\n].
@@ -82,7 +84,7 @@ fmt_raw_dir(tx) -> $T.
 fmt_raw_canid(CanId) when is_tuple(CanId) ->
     fmt_raw_canid(n2k:encode_canid(CanId));
 fmt_raw_canid(CanId) ->
-    ns2k:fmt_hex(<<0:3,CanId:29>>, []).
+    n2k:fmt_hex(<<0:3,CanId:29>>, []).
 
 fmt_raw_data(Data) ->
     n2k:fmt_hex(Data, $\s).

@@ -118,16 +118,18 @@ patch_fields([]) ->
     [];
 patch_fields(Fs) ->
     [H0 | T] = lists:reverse(Fs),
-    BitStart = proplists:get_value(bitstart, H0),
     H1 = proplists:delete(bitstart, H0),
-    H2 =
-        case proplists:get_value(length, H1) of
-            Len when Len > 1000, BitStart == 0, nyi == H1 ->
-                %% adhoc; treat as unknown length
-                lists:keyreplace(length, 1, H1, {length, unknown});
-            _ ->
-                H1
-        end,
+    %% BitStart = proplists:get_value(bitstart, H0),
+    %% H2 =
+    %%     %% FIXME: see nyi below
+    %%     case proplists:get_value(length, H1) of
+    %%         Len when Len > 1000, BitStart == 0, nyi == H1 ->
+    %%             %% adhoc; treat as unknown length
+    %%             lists:keyreplace(length, 1, H1, {length, unknown});
+    %%         _ ->
+    %%             H1
+    %%     end,
+    H2 = H1,
     lists:reverse([H2 | T]).
 
 fields([{'Field',_As,Cs} | T]) ->

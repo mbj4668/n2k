@@ -2,7 +2,7 @@
 %% -*- erlang -*-
 %%! -noinput
 
-%% Reads 'raw', 'csv' and 'dat' files, and converts
+%% Reads 'raw', 'csv', 'dat' and 'can' files, and converts
 %% to 'csv' or pretty text.
 %%
 %% Usage: n2k [-f csv | pretty] [-o OutFile] InFile
@@ -44,31 +44,33 @@ main(Args) ->
                      fun(Bin) -> io:fwrite("~s", [Bin]) end}
             end,
         PrettyF =
-            fun(Packet) ->
-                    Str = n2k:fmt_nmea_packet(Packet),
+            fun(Message) ->
+                    Str = n2k:fmt_nmea_message(Message),
                     WriteF(Str)
             end,
         {OutF, OutFInitState} =
             case Fmt of
                 csv ->
-                    {fun(Frame, _) ->
-                             WriteF(n2k_csv:encode_csv(Frame))
+                    {fun(Frame, _) when element(2, Frame) /= 'service' ->
+                             WriteF(n2k_csv:encode_csv(Frame));
+                        (_SrvRec, _) ->
+                             []
                      end,
                      []};
                 pretty when InFmt == dat ->
-                    {fun({_Time, 0, -1, _Data} = SrvRec, _) ->
+                    {fun({_Time, 'service', _Data} = SrvRec, _) ->
                              n2k_dat:fmt_service_record(SrvRec);
-                        ({Time, Src, PGN, Data}, _) ->
-                             Packet = {Time, Src, PGN,
-                                       n2k_pgn:decode(PGN, Data)},
-                             PrettyF(Packet)
+                        ({Time, Id, Data}, _) ->
+                             {_Pri, PGN, _Src, _Dst} = Id,
+                             Message = {Time, Id, n2k_pgn:decode(PGN, Data)},
+                             PrettyF(Message)
                      end,
                      []};
                 pretty ->
-                    {fun(Frame, State0) ->
+                    {fun(Frame, State0) when element(2, Frame) /= 'service' ->
                              case n2k:decode_nmea(Frame, State0) of
-                                 {true, Packet, State1} ->
-                                     PrettyF(Packet),
+                                 {true, Message, State1} ->
+                                     PrettyF(Message),
                                      State1;
                                  {false, State1} ->
                                      State1;
@@ -76,7 +78,10 @@ main(Args) ->
                                      io:format(standard_error,
                                                n2k:fmt_error(Error), []),
                                      State1
-                             end
+                             end;
+                        (SrvRec, State0) when InFmt == can ->
+                             n2k_can:fmt_service_record(SrvRec),
+                             State0
                      end,
                      n2k:decode_nmea_init()}
             end,
@@ -87,7 +92,9 @@ main(Args) ->
                 csv ->
                     n2k_csv:read_csv_file(InFName, OutF, OutFInitState);
                 dat ->
-                    n2k_dat:read_dat_file(InFName, OutF, OutFInitState)
+                    n2k_dat:read_dat_file(InFName, OutF, OutFInitState);
+                can ->
+                    n2k_can:read_can_file(InFName, OutF, OutFInitState)
             end
         after
             CloseF()
@@ -153,9 +160,13 @@ parse_args([], A) ->
 guess_format(FName) ->
     {ok, Fd} = file:open(FName, [read, raw, binary, read_ahead]),
     try
-        case file:read(Fd, 10) of
-            {ok, <<_,_,16#ff,16#ff,16#ff,16#ff,$Y,$D,$V,$R>>} ->
+        case file:read(Fd, 16) of
+            {ok, <<_,_,16#ff,16#ff,16#ff,16#ff,
+                   $Y,$D,$V,$R,$\s,$v,$0,$4,_,_>>} ->
                 dat;
+            {ok, <<_,_,_,_,16#ff,16#ff,16#ff,16#ff,
+                   $Y,$D,$V,$R,$\s,$v,$0,$5>>} ->
+                can;
             _ ->
                 file:position(Fd, 0),
                 {ok, Line} = file:read_line(Fd),

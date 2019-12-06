@@ -1,4 +1,4 @@
-%%% Decoder / encoder for CANBOAT's Plain Format
+%%% Decoder / encoder for CANBOAT's Plain Format (CSV)
 %%%
 %%% Each line represents one NMEA 2000 frame.
 %%%
@@ -47,7 +47,7 @@ read_csv_fd(Fd, F, Acc) ->
             Acc
     end.
 
--spec decode_csv(line()) -> n2k:frame().
+-spec decode_csv(Line :: binary()) -> n2k:frame().
 decode_csv(Line) ->
     [TimeB, PriB, PGNB, SrcB, DstB, _SzB | Ds] =
         binary:split(Line, <<",">>, [global,trim_all]),
@@ -62,10 +62,10 @@ decode_csv(Line) ->
     Dst = binary_to_integer(DstB),
     Data = list_to_binary([binary_to_integer(D, 16) || D <- Ds]),
     Milliseconds = ((((Hr*60 + Min) * 60) + Sec) * 1000) + Ms,
-    {Milliseconds, rx, {Pri, PGN, Src, Dst}, Data}.
+    {Milliseconds, {Pri, PGN, Src, Dst}, Data}.
 
 -spec encode_csv(n2k:frame()) -> line().
-encode_csv({Time, _Dir, {Pri, PGN, Src, Dst}, Data}) ->
+encode_csv({Time, {Pri, PGN, Src, Dst}, Data}) ->
     [n2k:fmt_ms_time(Time), $,,
      integer_to_list(Pri), $,,
      integer_to_list(PGN), $,,
