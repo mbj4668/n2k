@@ -1,7 +1,10 @@
 %%% Original code by Tony Rogvall <tony@rogvall.se>
 %%% @copyright (C) 2015, Tony Rogvall
 %%% Modified by Martin Björklund
-
+%%%
+%%% Used at compile time to generate Erlang code that can be
+%%% used to decode NMEA messages into Erlang terms.
+%%%
 %%% TODO:
 %%%  o  handle reserverd values for int fields ("unknown")
 %%%     see printNumber in analyzer.c
@@ -12,7 +15,7 @@
 %%%  o  handle type bcd (decimal encoded number) ??
 %%%  o  126208 not handled, see below
 %%%  o  better handling of the different int types
-
+%%%  o  handle repeating fields
 
 -module(gen_n2k_pgn).
 

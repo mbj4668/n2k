@@ -2,6 +2,9 @@
 %%% @copyright (C) 2015, Tony Rogvall
 %%% Modified by Martin Björklund
 %%%   - new interface
+%%%
+%%% Used at compile time to generate an Erlang term version of
+%%% the XML definition of PGNS.
 -module(gen_pgns_term).
 -export([gen/1]).
 

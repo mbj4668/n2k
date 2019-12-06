@@ -1,8 +1,9 @@
+%%% Library functions for NMEA encoding / decoding and formatting.
 -module(n2k).
 
--export([encode_canid/1, decode_canid/1]).
 -export([decode_nmea_init/0, decode_nmea/2, fmt_error/1]).
 -export([fmt_nmea_message/1]).
+-export([encode_canid/1, decode_canid/1]).
 -export([decode_string_a/1, decode_string/2]).
 -export([fmt_ms_time/1, fmt_date/1, fmt_hex/2]).
 
@@ -44,25 +45,8 @@
 
 -opaque dec_state() :: map().
 
--spec encode_canid(canid()) -> integer().
-encode_canid({Pri,PGN,Src,16#ff}) ->
-    <<ID:29>> = <<Pri:3,0:1,PGN:17,Src:8>>,
-    ID;
-encode_canid({Pri,PGN,Src,Dst}) ->
-    <<ID:29>> = <<Pri:3,0:1,(PGN bsr 8):9,Dst:8,Src:8>>,
-    ID.
-
--spec decode_canid(integer()) -> canid().
-decode_canid(CanId) ->
-    case <<CanId:29>> of
-        <<Pri:3,_:1,DP:1,IDA:8,Dst:8,Src:8>> when IDA < 240 ->
-            PGN = (DP bsl 16) + (IDA bsl 8),
-            {Pri,PGN,Src,Dst};
-        <<Pri:3,_:1,PGN:17,Src:8>> ->
-            {Pri,PGN,Src,16#ff}
-    end.
-
 -spec decode_nmea_init() -> dec_state().
+%%% Call this to get an initial decode state to pass to decode_nmea/2.
 decode_nmea_init() ->
     #{}.
 
@@ -135,6 +119,24 @@ fmt_error({frame_loss, Src, PGN, PrevIndex}) ->
     io_lib:format("warning: pgn ~w:~w, frame lost ~w\n", [Src,PGN,PrevIndex]);
 fmt_error({pgn_decode_error, Src, PGN}) ->
     io_lib:format("warning: pgn ~w:~w, could not decode\n", [Src,PGN]).
+
+-spec encode_canid(canid()) -> integer().
+encode_canid({Pri,PGN,Src,16#ff}) ->
+    <<ID:29>> = <<Pri:3,0:1,PGN:17,Src:8>>,
+    ID;
+encode_canid({Pri,PGN,Src,Dst}) ->
+    <<ID:29>> = <<Pri:3,0:1,(PGN bsr 8):9,Dst:8,Src:8>>,
+    ID.
+
+-spec decode_canid(integer()) -> canid().
+decode_canid(CanId) ->
+    case <<CanId:29>> of
+        <<Pri:3,_:1,DP:1,IDA:8,Dst:8,Src:8>> when IDA < 240 ->
+            PGN = (DP bsl 16) + (IDA bsl 8),
+            {Pri,PGN,Src,Dst};
+        <<Pri:3,_:1,PGN:17,Src:8>> ->
+            {Pri,PGN,Src,16#ff}
+    end.
 
 decode_string_a(Bin) ->
     case binary:last(Bin) of
