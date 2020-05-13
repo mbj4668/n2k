@@ -48,10 +48,21 @@ read_raw_fd(Fd, F, Acc) ->
 
 -spec decode_raw(Line :: binary()) -> {n2k:frame(), dir()}.
 decode_raw(Line0) ->
+    %% We handle lines with ending CRLF (proper msg), with just
+    %% LF (as returned by file:read_line), and w/o ending (if it
+    %% was removed already).
     Line =
         case binary:last(Line0) of
             $\n ->
-                binary:part(Line0, 0, byte_size(Line0) - 1);
+                Sz = byte_size(Line0),
+                Last =
+                    case binary:at(Line0, Sz-2) of
+                        $\r ->
+                            Sz-2;
+                        _ ->
+                            Sz-1
+                    end,
+                binary:part(Line0, 0, Last);
             _ ->
                 Line0
         end,
