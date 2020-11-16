@@ -6,6 +6,7 @@
 -export([encode_canid/1, decode_canid/1]).
 -export([decode_string_a/1, decode_string/2]).
 -export([fmt_ms_time/1, fmt_date/1, fmt_hex/2]).
+-export([chk_exception/2]).
 
 -export_type([canid/0, frame/0, message/0, dec_error/0, dec_state/0]).
 
@@ -213,9 +214,11 @@ hex(X) ->
 fmt_field(MsgName, {Name, Val}, Fields) ->
     [atom_to_list(Name), " = ", fmt_val(MsgName, Name, Val, Fields)].
 
+fmt_val(MsgName, Name, Val, Fields) when is_atom(Val) ->
+    atom_to_list(Val);
 fmt_val(MsgName, Name, Val, Fields) ->
     case n2k_pgn:type_info(MsgName, Name) of
-        {int, _Len, Resolution, Decimals, Units} ->
+        {int, Resolution, Decimals, Units} ->
             case Units of
                 days ->
                     Date =
@@ -262,3 +265,12 @@ fmt_units(undefined) ->
 fmt_units(Units) ->
     [$\s | atom_to_list(Units)].
 
+
+chk_exception(MaxVal, Val) ->
+    if Val == MaxVal ->
+            'Unknown';
+       MaxVal >= 15 andalso Val == (MaxVal - 1) ->
+            'Error';
+       true ->
+            Val
+    end.

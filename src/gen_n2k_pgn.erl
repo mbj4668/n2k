@@ -6,8 +6,6 @@
 %%% used to decode NMEA messages into Erlang terms.
 %%%
 %%% TODO:
-%%%  o  handle reserverd values for int fields ("unknown")
-%%%     see printNumber in analyzer.c
 %%%  o  the decoding of some strings need to be more dynamic,
 %%%     b/c they have variable length (see e.g. PGN 129285).
 %%%  o  in order to handle last field variable length, do that already
@@ -414,10 +412,13 @@ format_guard_matches(FVars) ->
        end, FVars, [], ",").
 
 format_field(F, DirectMatch) ->
-    Var = case proplists:get_value(match,F) of
-              undefined -> get_var(F);
-              Match -> integer_to_list(Match)
-          end,
+    {Var, IsMatch} =
+         case proplists:get_value(match,F) of
+             undefined ->
+                 {get_var(F), false};
+             Match ->
+                 {integer_to_list(Match), true}
+         end,
     Size = proplists:get_value(length, F),
     Signed = proplists:get_value(signed, F, false),
     Type   = proplists:get_value(type, F, int),
@@ -435,7 +436,12 @@ format_field(F, DirectMatch) ->
                   bcd -> "bitstring";     %% interpret later
                   _string -> "bitstring"  %% interpret later
               end,
-    [Var,":",integer_to_list(Size),"/",BitType].
+    if IsMatch andalso BitType == "bitstring" ->
+            [Var,":",integer_to_list(Size)];
+       true ->
+            [Var,":",integer_to_list(Size),"/",BitType]
+    end.
+
 
 %% filter reserved field not wanted in result list
 filter_reserved(Fs) ->
@@ -456,6 +462,20 @@ format_binding(F,_Last,_) ->
                 string_a ->
                     ["{",ID,",n2k:decode_string_a(",
                      Var,")}"];
+                Type when Type == int;
+                          Type == float;
+                          Type == enum;
+                          Type == undefined ->
+                    Length = proplists:get_value(length, F),
+                    Signed = proplists:get_value(signed, F, false),
+                    MaxVal =
+                        if Signed ->
+                                (1 bsl (Length-1)) - 1;
+                           true ->
+                                (1 bsl Length) - 1
+                        end,
+                    ["{",ID,",n2k:chk_exception(",
+                     integer_to_list(MaxVal), ",",Var,")}"];
                 _ ->
                     ["{",ID,",",Var,"}"]
             end;
@@ -535,9 +555,9 @@ mk_type_info_fs(PGNId, [[{order, _}, {id, IdStr} | T] | Fs], Tab) ->
                         TypeName0
                 end,
             ets:insert(Tab, {{PGNId, Id}, {enums, TypeName}});
-        {int, Len, Resolution, Decimals, Units} ->
+        {int, Resolution, Decimals, Units} ->
             ets:insert(Tab, {{PGNId, Id},
-                             {int, Len, Resolution, Decimals, Units}});
+                             {int, Resolution, Decimals, Units}});
         {float, Units} ->
             ets:insert(Tab, {{PGNId, Id}, {float, Units}});
         _ ->
@@ -560,7 +580,6 @@ get_type(Info) ->
                    true ->
                         undefined
                 end,
-            Length = proplists:get_value(length, Info),
             case proplists:get_value(type, Info) of
                 float ->
                     {float, Units};
@@ -571,9 +590,9 @@ get_type(Info) ->
                            true ->
                                 Resolution
                         end,
-                    {int, Length, Resolution1, Decimals, Units};
+                    {int, Resolution1, Decimals, Units};
                 _ when Resolution /= undefined ->
-                    {int, Length, Resolution, Decimals, Units};
+                    {int, Resolution, Decimals, Units};
                 _ ->
                     undefined
             end;
