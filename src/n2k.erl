@@ -177,7 +177,8 @@ decode_string(string, <<_Unknown,Rest/binary>>) ->
 -spec fmt_nmea_message(message()) -> string().
 fmt_nmea_message({Time, {Pri, PGN, Src, Dst}, {MsgName, Fields}}) ->
     Fs =
-        try [lists:flatten(fmt_field(MsgName, F)) || F <- Fields]
+        try
+            [fmt_field(MsgName, F, Fields) || F <- Fields]
         catch _:_X:S ->
                 io:format("**ERROR: ~p\n~p\n", [_X, S]),
                 [io_lib:format("** FIELDS: ~p", [Fields])]
@@ -209,11 +210,11 @@ fmt_hex(<<X,Bin/binary>>, Separator) ->
 hex(X) ->
     element((X band 15)+1, {$0,$1,$2,$3,$4,$5,$6,$7,$8,$9,$A,$B,$C,$D,$E,$F}).
 
-fmt_field(PGN, {Name, Val}) ->
-    [atom_to_list(Name), " = ", fmt_val(PGN, Name, Val)].
+fmt_field(MsgName, {Name, Val}, Fields) ->
+    [atom_to_list(Name), " = ", fmt_val(MsgName, Name, Val, Fields)].
 
-fmt_val(PGN, Name, Val) ->
-    case n2k_pgn:type_info(PGN, Name) of
+fmt_val(MsgName, Name, Val, Fields) ->
+    case n2k_pgn:type_info(MsgName, Name) of
         {int, _Len, Resolution, Decimals, Units} ->
             case Units of
                 days ->
@@ -244,6 +245,13 @@ fmt_val(PGN, Name, Val) ->
                     Str;
                 _ ->
                     integer_to_list(Val)
+            end;
+        _ when Name == deviceFunction ->
+            case proplists:get_value(deviceClass, Fields) of
+                undefined ->
+                    io_lib:format("~999p", [Val]);
+                Class ->
+                    n2k_pgn:device_function_name(Class, Val)
             end;
         _ ->
             io_lib:format("~999p", [Val])

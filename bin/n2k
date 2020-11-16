@@ -4,9 +4,10 @@
 
 %% Reads 'raw', 'csv', 'dat' and 'can' files, and converts
 %% to 'csv' or pretty text.
-%%
-%% Usage: n2k [-f csv | pretty] [-o OutFile] InFile
-%%  Default outformat is 'pretty'
+
+%% Usage: n2k [-f csv | pretty] [--src SrcId] [--pgn PGN] [-o <OutFile>]
+%%          <InFile>
+%% Default outformat is 'pretty'
 
 main(Args) ->
     ScriptName = script_name(),
@@ -85,16 +86,17 @@ main(Args) ->
                      end,
                      n2k:decode_nmea_init()}
             end,
+        {F, FInitState} = mk_filter_fun(A, OutF, OutFInitState),
         try
             case InFmt of
                 raw ->
-                    n2k_raw:read_raw_file(InFName, OutF, OutFInitState);
+                    n2k_raw:read_raw_file(InFName, F, FInitState);
                 csv ->
-                    n2k_csv:read_csv_file(InFName, OutF, OutFInitState);
+                    n2k_csv:read_csv_file(InFName, F, FInitState);
                 dat ->
-                    n2k_dat:read_dat_file(InFName, OutF, OutFInitState);
+                    n2k_dat:read_dat_file(InFName, F, FInitState);
                 can ->
-                    n2k_can:read_can_file(InFName, OutF, OutFInitState)
+                    n2k_can:read_can_file(InFName, F, FInitState)
             end
         after
             CloseF()
@@ -108,7 +110,8 @@ main(Args) ->
     end.
 
 usage() ->
-    io:format("usage: n2k [-f csv | pretty] [-o <OutFile>] <InFile>\n"),
+    io:format("usage: n2k [-f csv | pretty] [--src SrcId] [--pgn PGN]"
+              " [-o <OutFile>] <InFile>\n"),
     halt(1).
 
 ebin(ScriptName) ->
@@ -148,6 +151,10 @@ parse_args(["-f", Fmt | T], A) ->
     end;
 parse_args(["-o", OutFName | T], A) ->
     parse_args(T, A#{outfname => OutFName});
+parse_args(["--src", Src | T], A) ->
+    parse_args(T, A#{src => list_to_integer(Src)});
+parse_args(["--pgn", PGN | T], A) ->
+    parse_args(T, A#{pgn => list_to_integer(PGN)});
 parse_args(["-h" | _], _A) ->
     throw(help);
 parse_args([InFName], A) ->
@@ -188,4 +195,22 @@ guess_format(FName) ->
             unknown
     after
         file:close(Fd)
+    end.
+
+mk_filter_fun(A, OutF, OutFInitState) ->
+    case {maps:get(pgn, A, undefined), maps:get(src, A, undefined)} of
+        {undefined, undefined} ->
+            {OutF, OutFInitState};
+        {ReqPGN, ReqSrc} ->
+            {fun({_Time, {_Pri, PGN, Src, _}, _} = M, OutState) ->
+                     if (ReqPGN == undefined orelse ReqPGN == PGN)
+                        andalso
+                        (ReqSrc == undefined orelse ReqSrc == Src) ->
+                             OutF(M, OutState);
+                        true ->
+                             OutState
+                     end;
+                (M, OutState) ->
+                     OutF(M, OutState)
+             end, OutFInitState}
     end.
