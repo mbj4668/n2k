@@ -88,17 +88,17 @@ group_length([], P, Ls, Acc) ->
     [{P,Ls}|Acc].
 
 %% generate the is_fast function
-write_is_fast(Fd, [PGNL], Ps) ->
-    emit_is_fast_(Fd, PGNL, ".", Ps);
+write_is_fast(Fd, [], _Ps) ->
+    io:format(Fd, "is_fast(_) -> unknown.\n", []);
 write_is_fast(Fd, [PGNL|T], Ps) ->
-    emit_is_fast_(Fd, PGNL, ";", Ps),
+    emit_is_fast_(Fd, PGNL, Ps),
     write_is_fast(Fd, T, Ps).
 
-emit_is_fast_(Fd, {PGN,Length}, Term, Ps) ->
+emit_is_fast_(Fd, {PGN,Length}, Ps) ->
     {PGN,Fs} = lists:keyfind(PGN, 1, Ps),
     Repeating = proplists:get_value(repeating_fields, Fs, 0),
-    io:format(Fd, "is_fast(~p) -> ~w~s\n",
-              [PGN,(Length > 8) orelse (Repeating =/= 0),Term]).
+    io:format(Fd, "is_fast(~p) -> ~w;\n",
+              [PGN,(Length > 8) orelse (Repeating =/= 0)]).
 
 %% generate the decode function
 %% FIXME! repeating field need extra function to parse tail!

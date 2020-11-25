@@ -58,13 +58,13 @@ decode_nmea_init() ->
 %% Call this repeatedly with frames and a decode state.
 %% When a message has been assembled, {true, Message, State1} is
 %% returned.
-%% If the frame is part of a fast packet message, {false, Stat1} is
+%% If the frame is part of a fast packet message, {false, State1} is
 %% returned.
 %% If there's an error, {error, DecError, State1} is returned.
 decode_nmea(Frame, Map0) ->
     {Time, Id, Data} = Frame,
     {_Prio, PGN, Src, _Dst} = Id,
-    try n2k_pgn:is_fast(PGN) of
+    case n2k_pgn:is_fast(PGN) of
         false ->
             Message = {Time, Id, n2k_pgn:decode(PGN, Data)},
             {true, Message, Map0};
@@ -106,10 +106,8 @@ decode_nmea(Frame, Map0) ->
                         _ ->
                             {error, {frame_loss, Src, PGN, PrevIndex}, Map0}
                     end
-            end
-    catch
-        error:_X:Stacktrace ->
-            io:format("** error: ~p ~p\n", [_X, Stacktrace]),
+            end;
+        unknown ->
             Message = {Time, Id,
                       {unknown, [{unknown, binary_to_list(Data)}]}},
             {true, Message, Map0}
@@ -214,7 +212,7 @@ hex(X) ->
 fmt_field(MsgName, {Name, Val}, Fields) ->
     [atom_to_list(Name), " = ", fmt_val(MsgName, Name, Val, Fields)].
 
-fmt_val(MsgName, Name, Val, Fields) when is_atom(Val) ->
+fmt_val(_MsgName, _Name, Val, _Fields) when is_atom(Val) ->
     atom_to_list(Val);
 fmt_val(MsgName, Name, Val, Fields) ->
     case n2k_pgn:type_info(MsgName, Name) of
