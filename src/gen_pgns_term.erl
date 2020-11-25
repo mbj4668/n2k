@@ -383,8 +383,7 @@ type_of_ship_enums() ->
      {"Other (no additional information)",99}].
 
 manufacturer_code_enums() ->
-    [{"Volvo Penta", 174},
-     {"Actia", 199},
+    [{"Actia", 199},
      {"Actisense", 273},
      {"Aetna Engineering/Fireboy-Xintex", 215},
      {"Airmar", 135},
