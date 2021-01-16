@@ -138,7 +138,14 @@ write_decode(Fd, PGN, Info, Term) ->
         Repeat =:= [] ->
             {FixedMatches, FixedBindings, FixedGuards} =
                 format_fields(Fixed, PGN, post),
-            io:format(Fd, "decode(~p,<<~s,_/bitstring>>) ~s ->\n"
+            Trail =
+                case proplists:get_value(id, lists:last(Fs)) of
+                    "data" ->
+                        "";
+                    _ ->
+                        ",_/bitstring"
+                end,
+            io:format(Fd, "decode(~p,<<~s"++Trail++">>) ~s ->\n"
                           "~s {~s,[~s]}~s\n",
                       [PGN,
                        FixedMatches,
@@ -419,6 +426,7 @@ format_field(F, DirectMatch) ->
              Match ->
                  {integer_to_list(Match), true}
          end,
+    Id = proplists:get_value(id, F),
     Size = proplists:get_value(length, F),
     Signed = proplists:get_value(signed, F, false),
     Type   = proplists:get_value(type, F, int),
@@ -438,6 +446,8 @@ format_field(F, DirectMatch) ->
               end,
     if IsMatch andalso BitType == "bitstring" ->
             [Var,":",integer_to_list(Size)];
+       Id == "data" ->
+            [Var,"/",BitType];
        true ->
             [Var,":",integer_to_list(Size),"/",BitType]
     end.
