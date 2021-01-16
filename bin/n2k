@@ -5,7 +5,7 @@
 %% Reads 'raw', 'csv', 'dat' and 'can' files, and converts
 %% to 'csv' or pretty text.
 
-%% Usage: n2k [-f csv | pretty] [--src SrcId] [--pgn PGN] [-o <OutFile>]
+%% Usage: n2k [-f csv | pretty | devices] [--src SrcId] [--pgn PGN] [-o <OutFile>]
 %%          <InFile>
 %% Default outformat is 'pretty'
 
@@ -84,7 +84,23 @@ main(Args) ->
                              n2k_can:fmt_service_record(SrvRec),
                              State0
                      end,
-                     n2k:decode_nmea_init()}
+                     n2k:decode_nmea_init()};
+                devices ->
+                    {fun({_Time, {_Pri, 60928 = PGN, Src, _Dst}, Data}, S) ->
+                             case lists:member(Src, S) of
+                                 false ->
+                                     Msg = n2k_pgn:decode(PGN, Data),
+                                     WriteF(fmt_device(Src, Msg)),
+                                     [Src | S];
+                                 true ->
+                                     S
+                             end;
+%                        ({Time, {_Pri, 126996 = PGN, Src, _Dst}, Data}, S) ->
+%                             S;
+                        (_, S) ->
+                             S
+                     end,
+                     []}
             end,
         {F, FInitState} = mk_filter_fun(A, OutF, OutFInitState),
         try
@@ -103,16 +119,19 @@ main(Args) ->
         end
     catch
         throw:help ->
-            usage();
+            usage(0);
+        throw:Reason ->
+            io:format("~p\n", [Reason]),
+            usage(1);
         _:_Error:_StackTrace ->
             io:format("** ~p\n  ~p\n", [_Error, _StackTrace]),
-            usage()
+            usage(1)
     end.
 
-usage() ->
-    io:format("usage: n2k [-f csv | pretty] [--src SrcId] [--pgn PGN]"
+usage(ExitCode) ->
+    io:format("usage: n2k [-f csv | pretty | devices] [--src SrcId] [--pgn PGN]"
               " [-o <OutFile>] <InFile>\n"),
-    halt(1).
+    halt(ExitCode).
 
 ebin(ScriptName) ->
     %% The escript is located in .../n2k/bin
@@ -146,6 +165,8 @@ parse_args(["-f", Fmt | T], A) ->
             parse_args(T, A#{fmt => csv});
         "pretty" ->
             parse_args(T, A#{fmt => pretty});
+        "devices" ->
+            parse_args(T, A#{fmt => devices});
         _ ->
             throw({unknown_format, Fmt})
     end;
@@ -213,4 +234,27 @@ mk_filter_fun(A, OutF, OutFInitState) ->
                 (M, OutState) ->
                      OutF(M, OutState)
              end, OutFInitState}
+    end.
+
+
+fmt_device(Src, {_, PGNData}) ->
+    [_UniqueNumber,
+     {manufacturerCode, Code},
+     _DeviceInstanceLower,
+     _DeviceInstanceUpper,
+     {deviceFunction, Function},
+     {deviceClass, Class} | _] = PGNData,
+    io_lib:format("~3w ~s - ~s - ~s\n",
+                  [Src,
+                   get_enum(manufacturerCode, Code),
+                   get_enum(deviceClass, Class),
+                   n2k_pgn:device_function_name(Class, Function)]).
+
+get_enum(Field, Val) ->
+    {enums, Enums} = n2k_pgn:type_info(isoAddressClaim,Field),
+    case lists:keyfind(Val, 2, Enums) of
+        {Str, _} ->
+            Str;
+        _ ->
+            integer_to_list(Val)
     end.
