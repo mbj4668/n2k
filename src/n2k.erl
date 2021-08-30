@@ -120,12 +120,21 @@ fmt_error({pgn_decode_error, Src, PGN}) ->
     io_lib:format("warning: pgn ~w:~w, could not decode\n", [Src,PGN]).
 
 -spec encode_canid(canid()) -> integer().
-encode_canid({Pri,PGN,Src,16#ff}) ->
-    <<ID:29>> = <<Pri:3,0:1,PGN:17,Src:8>>,
-    ID;
 encode_canid({Pri,PGN,Src,Dst}) ->
-    <<ID:29>> = <<Pri:3,0:1,(PGN bsr 8):9,Dst:8,Src:8>>,
-    ID.
+    IDA = (PGN bsr 8) band 16#ff,
+    if IDA < 240 ->
+            <<ID:29>> = <<Pri:3,0:1,(PGN bsr 8):9,Dst:8,Src:8>>,
+            ID;
+       true ->
+            <<ID:29>> = <<Pri:3,0:1,PGN:17,Src:8>>,
+            ID
+    end.
+%encode_canid({Pri,PGN,Src,16#ff}) ->
+%    <<ID:29>> = <<Pri:3,0:1,PGN:17,Src:8>>,
+%    ID;
+%encode_canid({Pri,PGN,Src,Dst}) ->
+%    <<ID:29>> = <<Pri:3,0:1,(PGN bsr 8):9,Dst:8,Src:8>>,
+%    ID.
 
 -spec decode_canid(integer()) -> canid().
 decode_canid(CanId) ->
