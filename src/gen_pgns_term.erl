@@ -234,7 +234,7 @@ type("Pressure (hires)") -> int;
 type("IEEE Float") -> float;
 type("Decimal encoded number") -> bcd;
 type("ASCII text") ->
-    %% RES_ASCII
+    %% RES_ASCII (DF63)
     %% fixed length field, if string is shorter it is filled with
     %% 0x00 | 0xff | ' ' | '@'
     string_a;
@@ -245,11 +245,18 @@ type("String with start/stop byte") ->
     %% <len> 0x01 <char>{<len> - 2}
     string;
 type("ASCII or UNICODE string starting with length and control byte") ->
-    %% RES_STRINGLAU
+    %% RES_STRINGLAU (DF50)
     %% <len> <ctrl> <byte>{<len>}
-    %% <ctrl> == 0 -> unicode, otherwise ascii
+    %% <ctrl> == 0 -> unicode utf-16
+    %% <ctrl> == 1 -> ascii
     string_lau;
+%type("DF51") ->  % two-byte length for longer strings
+    %% <len1> <len2> <ctrl> <byte>{<len>}
+    %% <ctrl> == 0 -> unicode utf-16
+    %% <ctrl> == 1 -> ascii
+%    string_df51;
 type("ASCII string starting with length byte") ->
+    %% NOTE: this is a non-standard string type; used in old fusion PGNs.
     %% RES_STRINGLZ
     %% <len> <char>* 0x00
     string_lz.

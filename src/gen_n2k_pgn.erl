@@ -59,6 +59,15 @@ write_header(Fd, InFile) ->
     io:format(Fd, "-export([decode/2]).\n", []),
     io:format(Fd, "-export([type_info/2]).\n", []),
     io:format(Fd, "-export([device_function_name/2]).\n", []),
+    io:format(Fd, "\n\n", []),
+    io:format(Fd, "chk_exception(MaxVal, Val) ->\n", []),
+    io:format(Fd, "if Val == MaxVal ->\n", []),
+    io:format(Fd, "        'Unknown';\n", []),
+    io:format(Fd, "   MaxVal >= 15 andalso Val == (MaxVal - 1) ->\n", []),
+    io:format(Fd, "        'Error';\n", []),
+    io:format(Fd, "   true ->\n", []),
+    io:format(Fd, "        Val\n", []),
+    io:format(Fd, "end.\n", []),
     io:format(Fd, "\n\n", []).
 
 write_functions(Fd, Ps) ->
@@ -484,7 +493,7 @@ format_binding(F,_Last,_) ->
                            true ->
                                 (1 bsl Length) - 1
                         end,
-                    ["{",ID,",n2k:chk_exception(",
+                    ["{",ID,",chk_exception(",
                      integer_to_list(MaxVal), ",",Var,")}"];
                 _ ->
                     ["{",ID,",",Var,"}"]

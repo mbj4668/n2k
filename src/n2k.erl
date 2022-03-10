@@ -6,7 +6,6 @@
 -export([encode_canid/1, decode_canid/1]).
 -export([decode_string_a/1, decode_string/2]).
 -export([fmt_ms_time/1, fmt_date/1, fmt_hex/2]).
--export([chk_exception/2]).
 
 -export_type([canid/0, frame/0, message/0, dec_error/0, dec_state/0]).
 
@@ -104,7 +103,8 @@ decode_nmea(Frame, Map0) ->
                                     end
                             end;
                         _ ->
-                            {error, {frame_loss, Src, PGN, PrevIndex}, Map0}
+                            {error, {frame_loss, Src, PGN, Order, PrevIndex},
+                             Map0}
                     end
             end;
         unknown ->
@@ -114,8 +114,9 @@ decode_nmea(Frame, Map0) ->
     end.
 
 -spec fmt_error(dec_error()) -> string().
-fmt_error({frame_loss, Src, PGN, PrevIndex}) ->
-    io_lib:format("warning: pgn ~w:~w, frame lost ~w\n", [Src,PGN,PrevIndex]);
+fmt_error({frame_loss, Src, PGN, Order, PrevIndex}) ->
+    io_lib:format("warning: pgn ~w:~w, order ~w, frame lost ~w\n",
+                  [Src, PGN, Order, PrevIndex]);
 fmt_error({pgn_decode_error, Src, PGN}) ->
     io_lib:format("warning: pgn ~w:~w, could not decode\n", [Src,PGN]).
 
@@ -161,11 +162,15 @@ decode_string_a(Bin) ->
             Bin
     end.
 
-decode_string(string_lz, <<Len,Str:Len/binary,0,Rest/binary>>) ->
+-define(CTRL_UNICODE, 0). % UTF-16
+-define(CTRL_ASCII, 1). % actually, latin-1
+
+%% string_lau is N2K type DF50
+decode_string(string_lau, <<Len,?CTRL_ASCII,Str:Len/binary,Rest/binary>>) ->
     {Str, Rest};
-decode_string(string_lau, <<Len,_Ctrl,Str:Len/binary,Rest/binary>>) ->
-    %% if Ctrl == 0 -> Str is unicode otherwise ascii
-    {Str, Rest};
+decode_string(string_lau, <<Len,?CTRL_UNICODE,Str:Len/binary,Rest/binary>>) ->
+    {unicode:characters_to_binary(Str, utf16, utf8), Rest};
+%% string is unclear
 decode_string(string, <<2,Bin/binary>>) ->
     %% the string ends with byte 0x01
     [Str, Rest] = binary:split(Bin, <<1>>),
@@ -179,7 +184,10 @@ decode_string(string, <<Len0,1,Bin/binary>>) when Len0 > 3 ->
     {Str, Rest};
 decode_string(string, <<_Unknown,Rest/binary>>) ->
     %% is this really correct?
-    {<<>>, Rest}.
+    {<<>>, Rest};
+%% string_lz is proprietary fusion for old PGNs
+decode_string(string_lz, <<Len,Str:Len/binary,0,Rest/binary>>) ->
+    {Str, Rest}.
 
 
 -spec fmt_nmea_message(message()) -> string().
@@ -271,13 +279,3 @@ fmt_units(undefined) ->
     "";
 fmt_units(Units) ->
     [$\s | atom_to_list(Units)].
-
-
-chk_exception(MaxVal, Val) ->
-    if Val == MaxVal ->
-            'Unknown';
-       MaxVal >= 15 andalso Val == (MaxVal - 1) ->
-            'Error';
-       true ->
-            Val
-    end.
