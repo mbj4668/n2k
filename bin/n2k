@@ -5,9 +5,14 @@
 %% Reads 'raw', 'csv', 'dat' and 'can' files, and converts
 %% to 'csv' or pretty text.
 
-%% Usage: n2k [-f csv | pretty | devices] [--src SrcId] [--pgn PGN] [-o <OutFile>]
+%% Usage: n2k [-f csv | pretty | devices | errors]
+%%            [--src SrcId] [--pgn PGN] [-o <OutFile>]
 %%          <InFile>
 %% Default outformat is 'pretty'
+
+-define(CNT_MESSAGES, 1).
+-define(CNT_FAST_PACKET_ERRORS, 2).
+-define(CNT_SIZE, 2).
 
 main(Args) ->
     ScriptName = script_name(),
@@ -49,6 +54,8 @@ main(Args) ->
                     Str = n2k:fmt_nmea_message(Message),
                     WriteF(Str)
             end,
+        ETab = ets:new(etab, []),
+        Cnts = counters:new(?CNT_SIZE, []),
         {OutF, OutFInitState} =
             case Fmt of
                 csv ->
@@ -60,7 +67,8 @@ main(Args) ->
                      []};
                 pretty when InFmt == dat ->
                     {fun({_Time, 'service', _Data} = SrvRec, _) ->
-                             n2k_dat:fmt_service_record(SrvRec);
+                             Str = n2k_dat:fmt_service_record(SrvRec),
+                             WriteF(Str);
                         ({Time, Id, Data}, _) ->
                              {_Pri, PGN, _Src, _Dst} = Id,
                              Message = {Time, Id, n2k_pgn:decode(PGN, Data)},
@@ -71,9 +79,17 @@ main(Args) ->
                     {fun(Frame, State0) when element(2, Frame) /= 'service' ->
                              case n2k:decode_nmea(Frame, State0) of
                                  {true, Message, State1} ->
+                                     counters:add(Cnts,
+                                                  ?CNT_MESSAGES,
+                                                  1),
                                      PrettyF(Message),
                                      State1;
                                  {false, State1} ->
+                                     State1;
+                                 {error,
+                                  {frame_loss, Src, PGN, Order, _PrevIndex},
+                                  State1} ->
+                                     frame_lost(Src, PGN, Order, ETab, Cnts),
                                      State1;
                                  {error, Error, State1} ->
                                      io:format(standard_error,
@@ -81,7 +97,8 @@ main(Args) ->
                                      State1
                              end;
                         (SrvRec, State0) when InFmt == can ->
-                             n2k_can:fmt_service_record(SrvRec),
+                             Str = n2k_can:fmt_service_record(SrvRec),
+                             WriteF(Str),
                              State0
                      end,
                      n2k:decode_nmea_init()};
@@ -100,7 +117,34 @@ main(Args) ->
                         (_, S) ->
                              S
                      end,
-                     []}
+                     []};
+                errors ->
+                    {fun(Frame, State0) when element(2, Frame) /= 'service' ->
+                             case n2k:decode_nmea(Frame, State0) of
+                                 {true, _Message, State1} ->
+                                     counters:add(Cnts,
+                                                  ?CNT_MESSAGES,
+                                                  1),
+                                     State1;
+                                 {false, State1} ->
+                                     State1;
+                                 {error,
+                                  {frame_loss, Src, PGN, Order, _PrevIndex},
+                                  State1} ->
+                                     frame_lost(Src, PGN, Order, ETab, Cnts),
+                                     State1;
+                                 {error, Error, State1} ->
+                                     io:format(standard_error,
+                                               n2k:fmt_error(Error), []),
+                                     State1
+                             end;
+                        (_SrvRec, State0) when InFmt == can ->
+                             counters:add(Cnts,
+                                          ?CNT_MESSAGES,
+                                          1),
+                             State0
+                     end,
+                     n2k:decode_nmea_init()}
             end,
         {F, FInitState} = mk_filter_fun(A, OutF, OutFInitState),
         try
@@ -113,6 +157,17 @@ main(Args) ->
                     n2k_dat:read_dat_file(InFName, F, FInitState);
                 can ->
                     n2k_can:read_can_file(InFName, F, FInitState)
+            end,
+            if Fmt == pretty;
+               Fmt == errors ->
+                    Msgs = counters:get(Cnts, ?CNT_MESSAGES),
+                    FastPacketErrors =
+                        counters:get(Cnts, ?CNT_FAST_PACKET_ERRORS),
+                    io:format(standard_error,
+                              "Fast packet errors: ~w / ~.4f%\n",
+                              [FastPacketErrors, FastPacketErrors / Msgs]);
+               true ->
+                    ok
             end
         after
             CloseF()
@@ -129,7 +184,8 @@ main(Args) ->
     end.
 
 usage(ExitCode) ->
-    io:format("usage: n2k [-f csv | pretty | devices] [--src SrcId] [--pgn PGN]"
+    io:format("usage: n2k [-f csv | pretty | devices | errors]"
+              " [--src SrcId] [--pgn PGN]"
               " [-o <OutFile>] <InFile>\n"),
     halt(ExitCode).
 
@@ -167,6 +223,8 @@ parse_args(["-f", Fmt | T], A) ->
             parse_args(T, A#{fmt => pretty});
         "devices" ->
             parse_args(T, A#{fmt => devices});
+        "errors" ->
+            parse_args(T, A#{fmt => errors});
         _ ->
             throw({unknown_format, Fmt})
     end;
@@ -257,4 +315,13 @@ get_enum(Field, Val) ->
             Str;
         _ ->
             integer_to_list(Val)
+    end.
+
+frame_lost(Src, PGN, Order, ETab, Cnts) ->
+    case ets:lookup(ETab, {Src, PGN}) of
+        [{_, Order}] ->
+            ok;
+        _ ->
+            counters:add(Cnts, ?CNT_FAST_PACKET_ERRORS, 1),
+            ets:insert(ETab, {{Src, PGN}, Order})
     end.
