@@ -161,11 +161,16 @@ main(Args) ->
             if Fmt == pretty;
                Fmt == errors ->
                     Msgs = counters:get(Cnts, ?CNT_MESSAGES),
-                    FastPacketErrors =
-                        counters:get(Cnts, ?CNT_FAST_PACKET_ERRORS),
-                    io:format(standard_error,
-                              "Fast packet errors: ~w / ~.4f%\n",
-                              [FastPacketErrors, FastPacketErrors / Msgs]);
+                    if Msgs > 0 ->
+                            FastPacketErrors =
+                                counters:get(Cnts, ?CNT_FAST_PACKET_ERRORS),
+                            io:format(standard_error,
+                                      "Fast packet errors: ~w / ~.4f%\n",
+                                      [FastPacketErrors,
+                                       FastPacketErrors / Msgs]);
+                       true ->
+                            ok
+                    end;
                true ->
                     ok
             end

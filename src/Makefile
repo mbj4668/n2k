@@ -4,6 +4,8 @@ MODULES = n2k n2k_pgn n2k_raw n2k_csv n2k_can n2k_dat
 
 BEAM = $(MODULES:%=../ebin/%.beam)
 
+PGNS_XML = $(wildcard *pgns.xml)
+
 all: $(BEAM) ../ebin/n2k.app
 
 APPSCRIPT = '$$vsn=shift; $$mods=""; while(@ARGV){ \
@@ -22,8 +24,8 @@ APPSCRIPT = '$$vsn=shift; $$mods=""; while(@ARGV){ \
 n2k_pgn.erl: pgns.term gen_n2k_pgn.beam
 	erl -noshell -run gen_n2k_pgn gen $< $@
 
-pgns.term: pgns.xml gen_pgns_term.beam
-	erl -noshell -run gen_pgns_term gen $< $@
+pgns.term: gen_pgns_term.beam $(PGNS_XML)
+	erl -noshell -run gen_pgns_term gen $@ $(PGNS_XML)
 
 %.beam: %.erl
 	erlc $<

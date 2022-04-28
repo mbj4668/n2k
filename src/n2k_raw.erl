@@ -11,7 +11,7 @@
 -module(n2k_raw).
 
 -export([read_raw_file/1, read_raw_file/3]).
--export([decode_raw/1, encode_raw/1, encode_raw_frame/2]).
+-export([decode_raw/1, encode_raw/1, encode_raw_line/1, encode_raw_frame/2]).
 
 -export_type([line/0]).
 
@@ -88,6 +88,11 @@ encode_raw({{Time, CanId, Data}, Dir}) ->
     [n2k:fmt_ms_time(Time), $\s, fmt_raw_dir(Dir), $\s,
      fmt_raw_canid(CanId), $\s, fmt_raw_data(Data),
      $\r, $\n].
+
+-spec encode_raw_line({n2k:frame(), dir()}) -> line().
+encode_raw_line({{Time, CanId, Data}, Dir}) ->
+    [n2k:fmt_ms_time(Time), $\s, fmt_raw_dir(Dir), $\s,
+     fmt_raw_canid(CanId), $\s, fmt_raw_data(Data)].
 
 -spec encode_raw_frame(n2k:canid(), binary()) -> line().
 %% This line can be sent to a yacht device's gw.  Note that
