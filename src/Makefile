@@ -1,6 +1,8 @@
 VSN = 0.1.0
 
-MODULES = n2k n2k_pgn n2k_raw n2k_csv n2k_can n2k_dat
+XTRA_ERL = $(wildcard x_*.erl)
+XTRA_MODULES = $(XTRA_ERL:%.erl=%)
+MODULES = n2k n2k_pgn n2k_raw n2k_csv n2k_can n2k_dat $(XTRA_MODULES)
 
 BEAM = $(MODULES:%=../ebin/%.beam)
 

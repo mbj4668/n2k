@@ -104,6 +104,8 @@ pgn_info([{'Id',_As,[Value]}|T],PGN,Ps) ->
     pgn_info(T, PGN, [{id,Value}|Ps]);
 pgn_info([{'Description',_As,Vs}|T],PGN,Ps) ->
     pgn_info(T, PGN, [{description, string(Vs)}|Ps]);
+pgn_info([{'ErlangModule',_As,Vs}|T],PGN,Ps) ->
+    pgn_info(T, PGN, [{erlang_module, string(Vs)}|Ps]);
 pgn_info([{'Complete',_As,[Value]}|T],PGN,Ps) ->
     pgn_info(T, PGN, [{complete, boolean(Value)}|Ps]);
 pgn_info([{'Length',_As,[Value]}|T],PGN,Ps) ->

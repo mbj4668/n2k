@@ -29,11 +29,16 @@ main(Args) ->
                     throw(no_infile)
             end,
         InFmt =
-            case guess_format(InFName) of
-                unknown ->
-                    throw(unknown_format);
-                dat when Fmt == csv ->
-                    throw({cannot_convert_dat_to_csv});
+            case maps:get(infmt, A, undefined) of
+                undefined ->
+                    case guess_format(InFName) of
+                        unknown ->
+                            throw(unknown_format);
+                        dat when Fmt == csv ->
+                            throw({cannot_convert_dat_to_csv});
+                        InFmt0 ->
+                            InFmt0
+                    end;
                 InFmt0 ->
                     InFmt0
             end,
@@ -232,6 +237,13 @@ parse_args(["-f", Fmt | T], A) ->
             parse_args(T, A#{fmt => errors});
         _ ->
             throw({unknown_format, Fmt})
+    end;
+parse_args(["-i", InFmt | T], A) ->
+    case InFmt of
+        "raw" ->
+            parse_args(T, A#{infmt => raw});
+        _ ->
+            throw({unknown_informat, InFmt})
     end;
 parse_args(["-o", OutFName | T], A) ->
     parse_args(T, A#{outfname => OutFName});

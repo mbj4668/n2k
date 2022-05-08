@@ -6,6 +6,7 @@
 -export([encode_canid/1, decode_canid/1]).
 -export([decode_string_a/1, decode_string/2]).
 -export([fmt_ms_time/1, fmt_date/1, fmt_hex/2]).
+-export([encode_nmea_message/2, encode_nmea_message/3]).
 
 -export_type([canid/0, frame/0, message/0, dec_error/0, dec_state/0]).
 
@@ -72,7 +73,7 @@ decode_nmea(Frame, Map0) ->
                 <<Order:3,0:5,PLen,PayLoad/binary>> ->
                     %% this is the first of the fast messages, store
                     %% for assembly
-                    P = {Order, _Index = 0, PLen-size(PayLoad), [PayLoad]},
+                    P = {Order, _Index = 0, PLen-byte_size(PayLoad), [PayLoad]},
                     Map1 = maps:put({Src, PGN}, P, Map0),
                     {false, Map1};
                 <<Order:3,Index:5,PayLoad/binary>> ->
@@ -80,7 +81,7 @@ decode_nmea(Frame, Map0) ->
                     case maps:find({Src,PGN}, Map0) of
                         {ok, {Order, PrevIndex, PLen0, Data0}} ->
                             Data1 = [PayLoad | Data0],
-                            case PLen0 - size(PayLoad) of
+                            case PLen0 - byte_size(PayLoad) of
                                 PLen1 when PLen1 > 0 ->
                                     P = {Order, Index, PLen1, Data1},
                                     Map1 = maps:put({Src, PGN}, P, Map0),
@@ -92,7 +93,7 @@ decode_nmea(Frame, Map0) ->
                                     Map1 = maps:remove({Src, PGN}, Map0),
                                     try
                                         Message = {Time, Id,
-                                                  n2k_pgn:decode(PGN, Data2)},
+                                                   n2k_pgn:decode(PGN, Data2)},
                                         {true, Message, Map1}
                                     catch
                                         _:_X:Stacktrace ->
@@ -189,6 +190,40 @@ decode_string(string, <<_Unknown,Rest/binary>>) ->
 decode_string(string_lz, <<Len,Str:Len/binary,0,Rest/binary>>) ->
     {Str, Rest}.
 
+%% encode a message into a list of frames.
+%% encode_nmea_message/2 can only be used for fast PGNs
+encode_nmea_message(CanId, Data) ->
+    encode_nmea_message(CanId, Data, 0).
+encode_nmea_message({_Pri, PGN, _Src, _Dst} = CanId, Data, Order) ->
+    CanIdInt = encode_canid(CanId),
+    case n2k_pgn:is_fast(PGN) of
+        false ->
+            [{CanIdInt, Data}];
+        true ->
+            mk_fast_frames(Order, CanIdInt, Data)
+    end.
+
+mk_fast_frames(Order, CanIdInt, Payload) ->
+    PLen = byte_size(Payload),
+    if PLen =< 6 ->
+            [{CanIdInt, <<Order:3, 0:5, PLen, Payload/binary>>}];
+       true ->
+            Data = binary_part(Payload, 0, 6),
+            [{CanIdInt, <<Order:3, 0:5, PLen, Data/binary>>} |
+             mk_fast_frames(Order, 1, CanIdInt, 6, PLen, Payload)]
+    end.
+
+mk_fast_frames(Order, Index, CanIdInt, Pos, PLen, Payload) ->
+    if (Pos+7) >= PLen ->
+            %% last frame
+            Data = binary_part(Payload, Pos, (PLen - Pos)),
+            [{CanIdInt, <<Order:3, Index:5, Data/binary>>}];
+        true ->
+            Data = binary_part(Payload, Pos, 7),
+            [{CanIdInt, <<Order:3, Index:5, Data/binary>>} |
+             mk_fast_frames(Order, Index+1, CanIdInt, Pos+7, PLen, Payload)]
+    end.
+
 
 -spec fmt_nmea_message(message()) -> string().
 fmt_nmea_message({Time, {Pri, PGN, Src, Dst}, {MsgName, Fields}}) ->
@@ -272,7 +307,12 @@ fmt_val(MsgName, Name, Val, Fields) ->
                     n2k_pgn:device_function_name(Class, Val)
             end;
         _ ->
-            io_lib:format("~999p", [Val])
+            case n2k_pgn:erlang_module(MsgName) of
+                false ->
+                    io_lib:format("~999p", [Val]);
+                {true, Mod} ->
+                    Mod:format_val(MsgName, Name, Val, Fields)
+            end
     end.
 
 fmt_units(undefined) ->

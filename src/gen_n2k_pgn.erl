@@ -59,6 +59,7 @@ write_header(Fd, InFile) ->
     io:format(Fd, "-export([decode/2]).\n", []),
     io:format(Fd, "-export([type_info/2]).\n", []),
     io:format(Fd, "-export([device_function_name/2]).\n", []),
+    io:format(Fd, "-export([erlang_module/1]).\n", []),
     io:format(Fd, "\n\n", []),
     io:format(Fd, "chk_exception(MaxVal, Val) ->\n", []),
     io:format(Fd, "if Val == MaxVal ->\n", []),
@@ -84,7 +85,9 @@ write_functions(Fd, Ps) ->
     io:format(Fd, "\n\n", []),
     write_type_info(Fd, Ps),
     io:format(Fd, "\n\n", []),
-    write_device_function_name(Fd).
+    write_device_function_name(Fd),
+    io:format(Fd, "\n\n", []),
+    write_erlang_module(Fd, Ps).
 
 group_length([{P,L}|Ls]) ->
     group_length(Ls, P, [L], []).
@@ -126,6 +129,13 @@ write_decode(Fd, PGN, Info, Term) ->
     Repeating = proplists:get_value(repeating_fields,Info,0),
     ID = get_id(Info),
     {Fixed,Repeat} = lists:split(length(Fs)-Repeating, Fs),
+    {PreDecode, PostDecode} =
+        case proplists:get_value(erlang_module,Info, undefined) of
+            undefined ->
+                {"", ""};
+            Mod ->
+                {[Mod, ":decode("], ")"}
+        end,
     if
         Fixed  =:= [], Repeat =:= [] ->
             io:format(Fd, "decode(~p,<<_/bitstring>>) ->\n  {~s,[]}~s\n",
@@ -135,14 +145,16 @@ write_decode(Fd, PGN, Info, Term) ->
         Fixed =:= [] ->
             {RepeatMatches, RepeatBindings, []} =
                 format_fields(Repeat, PGN, pre),
-            io:format(Fd, "decode(~p,<<_Repeat/bitstring>>) ->\n  {~s, "
-                      "lists:append([ [~s] || <<~s>> <= _Repeat ~s])}~s\n",
+            io:format(Fd, "decode(~p,<<_Repeat/bitstring>>) ->\n  ~s{~s, "
+                      "lists:append([ [~s] || <<~s>> <= _Repeat ~s])}~s~s\n",
                       [PGN,
+                       PreDecode,
                        ID,
                        catmap(fun format_binding/3,filter_reserved(Repeat),
                               {PGN, ID}, ","),
                        RepeatMatches,
                        RepeatBindings,
+                       PostDecode,
                        Term]);
         Repeat =:= [] ->
             {FixedMatches, FixedBindings, FixedGuards} =
@@ -155,16 +167,18 @@ write_decode(Fd, PGN, Info, Term) ->
                         ",_/bitstring"
                 end,
             io:format(Fd, "decode(~p,<<~s"++Trail++">>) ~s ->\n"
-                          "~s {~s,[~s]}~s\n",
+                          "~s ~s{~s,[~s]}~s~s\n",
                       [PGN,
                        FixedMatches,
                        if FixedGuards == [] -> "";
                           true -> ["when ", FixedGuards]
                        end,
                        FixedBindings,
+                       PreDecode,
                        ID,
                        catmap(fun format_binding/3, filter_reserved(Fixed),
                               {PGN, ID}, ","),
+                       PostDecode,
                        Term]);
        true ->
             {FixedMatches, FixedBindings, FixedGuards} =
@@ -172,17 +186,18 @@ write_decode(Fd, PGN, Info, Term) ->
             {_RepeatMatches, _RepeatBindings, []} =
                 format_fields(Repeat, PGN, pre),
             io:format(Fd, "decode(~p,<<~s,_Repeat/bitstring>>) ~s ->\n"
-                      "~s {~s,[~s | "
+                      "~s ~s{~s,[~s | "
 %% FIXME - the repeat handling code is not correct
 %                      "lists:append([ [~s] || <<~s>> <= _Repeat ~s])]"
                       "[]]"
-                      "}~s\n",
+                      "}~s~s\n",
                       [PGN,
                        FixedMatches,
                        if FixedGuards == [] -> "";
                           true -> ["when ", FixedGuards]
                        end,
                        FixedBindings,
+                       PreDecode,
                        ID,
                        catmap(fun format_binding/3,filter_reserved(Fixed),
                               {PGN, ID}, ","),
@@ -190,6 +205,7 @@ write_decode(Fd, PGN, Info, Term) ->
 %                              {PGN, ID}, ","),
 %                       RepeatMatches,
 %                       RepeatBindings,
+                       PostDecode,
                        Term])
     end.
 
@@ -647,6 +663,22 @@ write_device_function_name(Fd) ->
       device_function_names()),
     io:format(Fd, "device_function_name(_,DeviceFunctionCode) ->"
               " integer_to_list(DeviceFunctionCode).\n", []).
+
+write_erlang_module(Fd, Ps) ->
+    write_erlang_module0(Ps, Fd),
+    io:format(Fd, "erlang_module(_) -> false.\n", []).
+
+write_erlang_module0([{_PGN, Info} | T], Fd) ->
+    case proplists:get_value(erlang_module,Info, undefined) of
+        undefined ->
+            ok;
+        Mod ->
+            PGNId = proplists:get_value(id, Info),
+            io:format(Fd, "erlang_module(~s) -> {true, ~s};\n", [PGNId, Mod])
+    end,
+    write_erlang_module0(T, Fd);
+write_erlang_module0([], _) ->
+    ok.
 
 reserved_word("after") -> true;
 reserved_word("begin") -> true;

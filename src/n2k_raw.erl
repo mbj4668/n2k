@@ -39,6 +39,8 @@ read_raw_file(FName, F, InitAcc) ->
 
 read_raw_fd(Fd, F, Acc) ->
     case file:read_line(Fd) of
+        {ok, <<$#, _/binary>>} ->
+            read_raw_fd(Fd, F, Acc);
         {ok, Line} ->
             {Frame, _Dir} = decode_raw(Line),
             read_raw_fd(Fd, F, F(Frame, Acc));
@@ -66,8 +68,13 @@ decode_raw(Line0) ->
             _ ->
                 Line0
         end,
-    [TimeB, <<DirCh>>, CanIdB | Ds] =
-        binary:split(Line, <<" ">>, [global,trim_all]),
+    case binary:split(Line, <<" ">>, [global,trim_all]) of
+        [TimeB, <<DirCh>>, CanIdB | Ds] ->
+            ok;
+        [CanIdB | Ds] ->
+            TimeB = <<"00:00:00.000">>,
+            DirCh = $R
+    end,
     <<HrB:2/binary,$:,MinB:2/binary,$:,SecB:2/binary,$.,MsB:3/binary>> = TimeB,
     Hr = binary_to_integer(HrB),
     Min = binary_to_integer(MinB),
