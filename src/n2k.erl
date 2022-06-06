@@ -6,7 +6,7 @@
 -export([encode_canid/1, decode_canid/1]).
 -export([decode_string_a/1, decode_string/2]).
 -export([fmt_ms_time/1, fmt_date/1, fmt_hex/2]).
--export([encode_nmea_message/2, encode_nmea_message/3]).
+-export([encode_nmea_message/2, encode_nmea_fast_message/3]).
 
 -export_type([canid/0, frame/0, message/0, dec_error/0, dec_state/0]).
 
@@ -190,38 +190,40 @@ decode_string(string, <<_Unknown,Rest/binary>>) ->
 decode_string(string_lz, <<Len,Str:Len/binary,0,Rest/binary>>) ->
     {Str, Rest}.
 
-%% encode a message into a list of frames.
-%% encode_nmea_message/2 can only be used for fast PGNs
+-spec encode_nmea_message(canid(), binary()) ->
+          {integer(), binary()}.
+%% encode a message into a frame.
 encode_nmea_message(CanId, Data) ->
-    encode_nmea_message(CanId, Data, 0).
-encode_nmea_message({_Pri, PGN, _Src, _Dst} = CanId, Data, Order) ->
     CanIdInt = encode_canid(CanId),
-    case n2k_pgn:is_fast(PGN) of
-        false ->
-            [{CanIdInt, Data}];
-        true ->
-            mk_fast_frames(Order, CanIdInt, Data)
-    end.
+    {CanIdInt, Data}.
 
-mk_fast_frames(Order, CanIdInt, Payload) ->
+-spec encode_nmea_fast_message(canid(), binary(), integer()) ->
+          {integer(), [binary()]}.
+%% encode a fast message into a list of frames
+%% Order is a integer (counter) 0..7
+encode_nmea_fast_message(CanId, Data, Order) ->
+    CanIdInt = encode_canid(CanId),
+    {CanIdInt, mk_fast_frames(Order, Data)}.
+
+mk_fast_frames(Order, Payload) ->
     PLen = byte_size(Payload),
     if PLen =< 6 ->
-            [{CanIdInt, <<Order:3, 0:5, PLen, Payload/binary>>}];
+            [<<Order:3, 0:5, PLen, Payload/binary>>];
        true ->
             Data = binary_part(Payload, 0, 6),
-            [{CanIdInt, <<Order:3, 0:5, PLen, Data/binary>>} |
-             mk_fast_frames(Order, 1, CanIdInt, 6, PLen, Payload)]
+            [<<Order:3, 0:5, PLen, Data/binary>> |
+             mk_fast_frames(Order, 1, 6, PLen, Payload)]
     end.
 
-mk_fast_frames(Order, Index, CanIdInt, Pos, PLen, Payload) ->
+mk_fast_frames(Order, Index, Pos, PLen, Payload) ->
     if (Pos+7) >= PLen ->
             %% last frame
             Data = binary_part(Payload, Pos, (PLen - Pos)),
-            [{CanIdInt, <<Order:3, Index:5, Data/binary>>}];
+            [<<Order:3, Index:5, Data/binary>>];
         true ->
             Data = binary_part(Payload, Pos, 7),
-            [{CanIdInt, <<Order:3, Index:5, Data/binary>>} |
-             mk_fast_frames(Order, Index+1, CanIdInt, Pos+7, PLen, Payload)]
+            [<<Order:3, Index:5, Data/binary>> |
+             mk_fast_frames(Order, Index+1, Pos+7, PLen, Payload)]
     end.
 
 
