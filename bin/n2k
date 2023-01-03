@@ -188,6 +188,8 @@ main(Args) ->
         throw:Reason ->
             io:format("~p\n", [Reason]),
             usage(1);
+        _:terminated ->
+            halt(1);
         _:_Error:_StackTrace ->
             io:format("** ~p\n  ~p\n", [_Error, _StackTrace]),
             usage(1)
@@ -195,6 +197,7 @@ main(Args) ->
 
 usage(ExitCode) ->
     io:format("usage: n2k [-f csv | pretty | devices | errors]"
+              " [--infmt raw | csv | dat | can]"
               " [--src SrcId] [--pgn PGN]"
               " [-o <OutFile>] <InFile>\n"),
     halt(ExitCode).
@@ -238,10 +241,16 @@ parse_args(["-f", Fmt | T], A) ->
         _ ->
             throw({unknown_format, Fmt})
     end;
-parse_args(["-i", InFmt | T], A) ->
+parse_args(["--infmt", InFmt | T], A) ->
     case InFmt of
         "raw" ->
             parse_args(T, A#{infmt => raw});
+        "csv" ->
+            parse_args(T, A#{infmt => csv});
+        "dat" ->
+            parse_args(T, A#{infmt => dat});
+        "can" ->
+            parse_args(T, A#{infmt => can});
         _ ->
             throw({unknown_informat, InFmt})
     end;

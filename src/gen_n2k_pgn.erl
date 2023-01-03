@@ -1,18 +1,13 @@
 %%% Original code by Tony Rogvall <tony@rogvall.se>
 %%% @copyright (C) 2015, Tony Rogvall
-%%% Modified by Martin Björklund
+%%% Heavily modified by Martin Björklund
 %%%
 %%% Used at compile time to generate Erlang code that can be
 %%% used to decode NMEA messages into Erlang terms.
 %%%
 %%% TODO:
-%%%  o  the decoding of some strings need to be more dynamic,
-%%%     b/c they have variable length (see e.g. PGN 129285).
-%%%  o  in order to handle last field variable length, do that already
-%%%     in pgns.term; find that and do {length, 'variable'}.
-%%%  o  handle type bcd (decimal encoded number) ??
+%%%  o  handle type bcd (decimal encoded number)
 %%%  o  126208 not handled, see below
-%%%  o  better handling of the different int types
 %%%  o  handle repeating fields
 
 -module(gen_n2k_pgn).
@@ -21,7 +16,7 @@
 
 gen([PgnsTermFile, ErlFile]) ->
     case file:consult(PgnsTermFile) of
-        {ok, Def} ->
+        {ok, [Def]} ->
             case save(ErlFile, Def, PgnsTermFile) of
                 ok ->
                     init:stop(0);
@@ -35,11 +30,15 @@ gen([PgnsTermFile, ErlFile]) ->
     end.
 
 save(File, Def, InFile) ->
-    case file:open(File, [write]) of
+    case file:open(File, [write, {encoding, utf8}]) of
         {ok, Fd} ->
             try
+                {PGNs, Enums1, Enums2, Bits1} = Def,
                 ok = write_header(Fd, InFile),
-                ok = write_functions(Fd, Def)
+                ok = write_enums1(Fd, Enums1),
+                ok = write_enums2(Fd, Enums2),
+                ok = write_bits1(Fd, Bits1),
+                ok = write_pgn_functions(Fd, PGNs)
             catch
                 error:Reason:Stacktrace ->
                     {error, {Reason, Stacktrace}}
@@ -58,70 +57,98 @@ write_header(Fd, InFile) ->
     io:format(Fd, "-export([is_fast/1]).\n", []),
     io:format(Fd, "-export([decode/2]).\n", []),
     io:format(Fd, "-export([type_info/2]).\n", []),
-    io:format(Fd, "-export([device_function_name/2]).\n", []),
     io:format(Fd, "-export([erlang_module/1]).\n", []),
     io:format(Fd, "\n\n", []),
-    io:format(Fd, "chk_exception(MaxVal, Val) ->\n", []),
-    io:format(Fd, "if Val == MaxVal ->\n", []),
-    io:format(Fd, "        'Unknown';\n", []),
-    io:format(Fd, "   MaxVal >= 15 andalso Val == (MaxVal - 1) ->\n", []),
-    io:format(Fd, "        'Error';\n", []),
-    io:format(Fd, "   true ->\n", []),
-    io:format(Fd, "        Val\n", []),
-    io:format(Fd, "end.\n", []),
+    io:format(Fd, "chk_exception1(MaxVal, Val) ->\n", []),
+    io:format(Fd, "    if Val == MaxVal ->\n", []),
+    io:format(Fd, "            'Unknown';\n", []),
+    io:format(Fd, "       true ->\n", []),
+    io:format(Fd, "            Val\n", []),
+    io:format(Fd, "    end.\n", []),
+    io:format(Fd, "chk_exception2(MaxVal, Val) ->\n", []),
+    io:format(Fd, "    if Val == MaxVal ->\n", []),
+    io:format(Fd, "            'Unknown';\n", []),
+    io:format(Fd, "       Val == (MaxVal - 1) ->\n", []),
+    io:format(Fd, "            'Error';\n", []),
+    io:format(Fd, "       true ->\n", []),
+    io:format(Fd, "            Val\n", []),
+    io:format(Fd, "    end.\n", []),
     io:format(Fd, "\n\n", []).
 
-write_functions(Fd, Ps) ->
-    %% Some PGNs exist in more than one variant; pick the one with
-    %% longest message length in order to determine if it is fast or
-    %% not.
-    Ls = [{PGN,proplists:get_value(length,Fs,8)} || {PGN,Fs} <- Ps],
-    Ls1 = lists:usort(Ls),
-    Ls2 = group_length(Ls1),
-    Ls3 = [{P, lists:max(Ln)} || {P,Ln} <- Ls2],
-    write_is_fast(Fd, Ls3, Ps),
+write_pgn_functions(Fd, Ps) ->
+    write_is_fast(Fd, Ps),
     io:format(Fd, "\n\n", []),
     write_decode(Fd, Ps),
     io:format(Fd, "\n\n", []),
     write_type_info(Fd, Ps),
     io:format(Fd, "\n\n", []),
-    write_device_function_name(Fd),
-    io:format(Fd, "\n\n", []),
     write_erlang_module(Fd, Ps).
 
-group_length([{P,L}|Ls]) ->
-    group_length(Ls, P, [L], []).
-
-group_length([{P,L}|Ps], P, Ls, Acc) ->
-    group_length(Ps, P, [L|Ls], Acc);
-group_length([{Q,L}|Ps], P, Ls, Acc) ->
-    group_length(Ps, Q, [L], [{P,Ls}|Acc]);
-group_length([], P, Ls, Acc) ->
-    [{P,Ls}|Acc].
-
 %% generate the is_fast function
-write_is_fast(Fd, [], _Ps) ->
-    io:format(Fd, "is_fast(_) -> unknown.\n", []);
-write_is_fast(Fd, [PGNL|T], Ps) ->
-    emit_is_fast_(Fd, PGNL, Ps),
-    write_is_fast(Fd, T, Ps).
-
-emit_is_fast_(Fd, {PGN,Length}, Ps) ->
-    {PGN,Fs} = lists:keyfind(PGN, 1, Ps),
-    Repeating = proplists:get_value(repeating_fields, Fs, 0),
-    io:format(Fd, "is_fast(~p) -> ~w;\n",
-              [PGN,(Length > 8) orelse (Repeating =/= 0)]).
+write_is_fast(Fd, Ps) ->
+    FastL = [PGN || {PGN, Fs} <- Ps,
+                    fast == proplists:get_value(type, Fs)],
+    %% single ranges
+    io:format(
+      Fd,
+      "is_fast(PGN) when PGN =< 65535 -> false;\n",
+      []),
+    %% fast-packet propietary range, as defined by main N2k spec 3.4.1.2
+    io:format(
+      Fd,
+      "is_fast(PGN) when 130816 =< PGN andalso PGN =< 131071 -> true;\n",
+      []),
+    %% mixed single/fast; only write the fast PGNs
+    lists:foreach(
+      fun(PGN) ->
+              io:format(Fd, "is_fast(~p) -> true;\n", [PGN])
+      end, lists:usort(FastL)),
+    io:format(Fd, "is_fast(_) -> false.\n", []).
 
 %% generate the decode function
 %% FIXME! repeating field need extra function to parse tail!
 write_decode(Fd, [{126208,_Info}|Ps]) ->
-    %% FIXME: can't handle variable length yet
+    %% TODO: In order to implement this PGN we would need a generated table
+    %% of all PGNs and their fields.  For example
+    %% `pgn_field(PGN, FieldNumber)`.
     write_decode(Fd, Ps);
 write_decode(Fd, [{PGN,Info}|Ps]) ->
     write_decode(Fd, PGN, Info, ";"),
     write_decode(Fd, Ps);
 write_decode(Fd, []) ->
-    io:format(Fd, "decode(PGN,Data)->{unknown, [{pgn,PGN},{data,Data}]}.\n",
+    %% Add decode of the fallback PGNs
+    io:format(Fd,
+"decode(126720,
+       <<_0:8,IndustryCode:3/little-unsigned,_2:2,_1:3,Data/bitstring>>)  ->
+    <<ManufacturerCode:11/unsigned>> = <<_1:3,_0:8>>,
+    {manufacturerProprietaryFastPacketAddressable,
+     [{manufacturerCode,chk_exception2(2047,ManufacturerCode)},
+      {industryCode,chk_exception1(7,IndustryCode)},
+      {data,Data}]};
+ decode(61184,
+       <<_0:8,IndustryCode:3/little-unsigned,_2:2,_1:3,Data/bitstring>>)  ->
+    <<ManufacturerCode:11/unsigned>> = <<_1:3,_0:8>>,
+    {manufacturerProprietarySingleFrameAddressable,
+     [{manufacturerCode,chk_exception2(2047,ManufacturerCode)},
+      {industryCode,chk_exception1(7,IndustryCode)},
+      {data,Data}]};
+ decode(PGN,
+       <<_0:8,IndustryCode:3/little-unsigned,_2:2,_1:3,Data/bitstring>>)
+  when 65280 =< PGN andalso PGN =< 065535 ->
+    <<ManufacturerCode:11/unsigned>> = <<_1:3,_0:8>>,
+    {manufacturerProprietarySingleFrameGlobal,
+     [{manufacturerCode,chk_exception2(2047,ManufacturerCode)},
+      {industryCode,chk_exception1(7,IndustryCode)},
+      {data,Data}]};
+ decode(PGN,
+       <<_0:8,IndustryCode:3/little-unsigned,_2:2,_1:3,Data/bitstring>>)
+  when 130816 =< PGN andalso PGN =< 131071 ->
+    <<ManufacturerCode:11/unsigned>> = <<_1:3,_0:8>>,
+    {manufacturerProprietaryFastPacketGlobal,
+     [{manufacturerCode,chk_exception2(2047,ManufacturerCode)},
+      {industryCode,chk_exception1(7,IndustryCode)},
+      {data,Data}]};
+ decode(PGN,Data)->{unknown, [{pgn,PGN},{data,Data}]}.\n",
               []).
 
 write_decode(Fd, PGN, Info, Term) ->
@@ -144,7 +171,7 @@ write_decode(Fd, PGN, Info, Term) ->
                        Term]);
         Fixed =:= [] ->
             {RepeatMatches, RepeatBindings, []} =
-                format_fields(Repeat, PGN, pre),
+                format_fields(Repeat, PGN, Fs, pre),
             io:format(Fd, "decode(~p,<<_Repeat/bitstring>>) ->\n  ~s{~s, "
                       "lists:append([ [~s] || <<~s>> <= _Repeat ~s])}~s~s\n",
                       [PGN,
@@ -158,7 +185,7 @@ write_decode(Fd, PGN, Info, Term) ->
                        Term]);
         Repeat =:= [] ->
             {FixedMatches, FixedBindings, FixedGuards} =
-                format_fields(Fixed, PGN, post),
+                format_fields(Fixed, PGN, Fs, post),
             Trail =
                 case proplists:get_value(id, lists:last(Fs)) of
                     "data" ->
@@ -182,9 +209,9 @@ write_decode(Fd, PGN, Info, Term) ->
                        Term]);
        true ->
             {FixedMatches, FixedBindings, FixedGuards} =
-                format_fields(Fixed, PGN, post),
+                format_fields(Fixed, PGN, Fs, post),
             {_RepeatMatches, _RepeatBindings, []} =
-                format_fields(Repeat, PGN, pre),
+                format_fields(Repeat, PGN, Fs, pre),
             io:format(Fd, "decode(~p,<<~s,_Repeat/bitstring>>) ~s ->\n"
                       "~s ~s{~s,[~s | "
 %% FIXME - the repeat handling code is not correct
@@ -240,7 +267,7 @@ catmap(Fun, [F|Fs], Arg, Sep) ->
 %% Field variables:
 %%  [{A,2,[A1]}, {B,20,[B3,B2,B1]}, {C,4,[C2,C1]}, {D,2,[D1]}, {E,16,[E2,E1]}]
 %%
-%% This is then optimized and flatten to:
+%% This is then optimized and flattened to:
 %%
 %% Matches:
 %%  [{B1,6},{A,2}, {B2,8}, {B3,6},{C1,2}, {_,4},{D,2},{C2,2}, {E,16/little}]
@@ -250,14 +277,15 @@ catmap(Fun, [F|Fs], Arg, Sep) ->
 %% If the PGN spec has a "match" field, we either match on it directly (if
 %% it is a simple field), or create a guard for it.
 
-format_fields(Fs, _PGN, PreOrPost) ->
+format_fields(Fs, _PGN, AllFs, PreOrPost) ->
     {Matches0, FVars0} = field_matches(Fs, 0, 0, [], [], []),
-    {Matches1, FVars1} = replace_bytes(Matches0, FVars0, [], []),
-    {Matches2, FVars2} = replace_single_var(FVars1, Matches1, []),
+    {Matches1, FVars1} = replace_bytes(Matches0, FVars0, AllFs, [], []),
+    {Matches2, FVars2} = replace_single_var(FVars1, Matches1, AllFs, []),
+    Matches3 = strip_matches(Matches2, FVars2),
     {FVarsGuards, FVars3} =
         lists:partition(fun({F, _}) -> is_matching_field(F) end, FVars2),
-    {format_matches(Matches2),
-     format_field_variables(FVars3, PreOrPost),
+    {format_matches(Matches3),
+     format_field_variables(FVars3, AllFs, PreOrPost),
      format_guard_matches(FVarsGuards)}.
 
 %% Loop over each field, handle all bits in one byte at the time.
@@ -265,8 +293,20 @@ format_fields(Fs, _PGN, PreOrPost) ->
 %% Matches :: [ByteMatch :: {Var, NBits}]
 %% FVars :: [{Field, [{Var, NBits}]}]
 field_matches([F | T], CurBit, N, ByteAcc, MatchesAcc, FVarsAcc) ->
-    Size = proplists:get_value(length, F),
-    field_matches0(F, T, Size, CurBit, N, [], ByteAcc, MatchesAcc, FVarsAcc);
+    case proplists:get_value(length, F) of
+        undefined ->
+            case proplists:get_value(var_length, F) of
+                true ->
+                    VB = {var(N), -1},
+                    field_matches(T, CurBit, N+1,
+                                  ByteAcc,
+                                  [[VB] | MatchesAcc],
+                                  [{F, [VB]} | FVarsAcc])
+            end;
+        Size ->
+            field_matches0(F, T, Size, CurBit, N, [],
+                           ByteAcc, MatchesAcc, FVarsAcc)
+    end;
 field_matches([], CurBit, _N, ByteAcc, MatchesAcc, FVarsAcc) ->
     if CurBit > 0 andalso CurBit < 8 -> % fill with don't care
             Var = "_",
@@ -311,11 +351,12 @@ is_matching_field(F) ->
 %% The input lists are reversed.  Find sequences of aligned bytes for
 %% a single field, and replace with direct match of that field.
 replace_bytes([[{Var, 8}] | ByteMatches], [{F, [{Var, 8} | Vars]} | Fs],
-              MatchesAcc, FVarsAcc) ->
+              AllFs, MatchesAcc, FVarsAcc) ->
     case can_replace_bytes(ByteMatches, Vars) of
         {true, ByteMatches0} ->
-            replace_bytes(ByteMatches0, Fs,
-                          [{matched, format_field(F, true)} | MatchesAcc],
+            replace_bytes(ByteMatches0, Fs, AllFs,
+                          [{matched, format_field(F, true, AllFs)} |
+                           MatchesAcc],
                           FVarsAcc);
         false ->
             %% couldn't match this field. step forward in ByteMatches until
@@ -323,16 +364,16 @@ replace_bytes([[{Var, 8}] | ByteMatches], [{F, [{Var, 8} | Vars]} | Fs],
             %% find the last variable for this field.
             [ByteMatch | ByteMatches1] = ByteMatches,
             skip_until_var(lists:last(Vars), ByteMatch, ByteMatch,
-                           ByteMatches1, Fs,
+                           ByteMatches1, Fs, AllFs,
                            [{Var, 8} | MatchesAcc],
                            [{F, [{Var, 8} | Vars]} | FVarsAcc])
     end;
 replace_bytes([ByteMatch | ByteMatches], [{F, Vars} | Fs],
-              MatchesAcc, FVarsAcc) ->
+              AllFs, MatchesAcc, FVarsAcc) ->
     %% same as last clause above
     skip_until_var(lists:last(Vars), ByteMatch, ByteMatch,
-                   ByteMatches, Fs, MatchesAcc, [{F, Vars} | FVarsAcc]);
-replace_bytes([], _, MatchesAcc, FVarsAcc) ->
+                   ByteMatches, Fs, AllFs, MatchesAcc, [{F, Vars} | FVarsAcc]);
+replace_bytes([], _, _, MatchesAcc, FVarsAcc) ->
     {MatchesAcc, FVarsAcc}.
 
 can_replace_bytes([[{Var, 8}] | ByteMatches], [{Var, 8} | Vars]) ->
@@ -343,41 +384,42 @@ can_replace_bytes(_, _) ->
     false.
 
 skip_until_var({Var, _}, [{Var, _} | T], ByteMatch, ByteMatches,
-               Fs, MatchesAcc, FVarsAcc) ->
+               Fs, AllFs, MatchesAcc, FVarsAcc) ->
     case T of
         [] ->
             %% the last var of the field was also the last in the byte match,
             %% we can thus check a new byte.
-            replace_bytes(ByteMatches, Fs,
+            replace_bytes(ByteMatches, Fs, AllFs,
                           lists:append(ByteMatch, MatchesAcc), FVarsAcc);
         _ ->
             %% we have found the variable for the field, but there are
             %% bits left in the byte match.  need to skip the fields that
             %% correspond to these bits.
             LastVarAndSz = lists:last(T),
-            skip_until_field(LastVarAndSz, Fs, ByteMatches,
+            skip_until_field(LastVarAndSz, Fs, ByteMatches, AllFs,
                              lists:append(ByteMatch, MatchesAcc), FVarsAcc)
     end;
 skip_until_var(Var, [_ | T], ByteMatch, ByteMatches,
-               Fs, MatchesAcc, FVarsAcc) ->
-    skip_until_var(Var, T, ByteMatch, ByteMatches, Fs, MatchesAcc, FVarsAcc);
+               Fs, AllFs, MatchesAcc, FVarsAcc) ->
+    skip_until_var(Var, T, ByteMatch, ByteMatches, Fs, AllFs,
+                   MatchesAcc, FVarsAcc);
 skip_until_var(Var, [], ByteMatch0, [ByteMatch | ByteMatches],
-               Fs, MatchesAcc, FVarsAcc) ->
-    skip_until_var(Var, ByteMatch, ByteMatch, ByteMatches, Fs,
+               Fs, AllFs, MatchesAcc, FVarsAcc) ->
+    skip_until_var(Var, ByteMatch, ByteMatch, ByteMatches, Fs, AllFs,
                    lists:append(ByteMatch0, MatchesAcc), FVarsAcc).
 
-skip_until_field(VarAndSz, [{_, Vars} = F | Fs], ByteMatches,
+skip_until_field(VarAndSz, [{_, Vars} = F | Fs], ByteMatches, AllFs,
                  MatchesAcc, FVarsAcc) ->
     case member_and_rest(VarAndSz, Vars) of
         {true, []} ->
-            replace_bytes(ByteMatches, Fs, MatchesAcc, [F | FVarsAcc]);
+            replace_bytes(ByteMatches, Fs, AllFs, MatchesAcc, [F | FVarsAcc]);
         {true, RestVars} ->
             [ByteMatch | ByteMatches1] = ByteMatches,
             skip_until_var(lists:last(RestVars), ByteMatch, ByteMatch,
-                           ByteMatches1, Fs,
+                           ByteMatches1, Fs, AllFs,
                            MatchesAcc, [F | FVarsAcc]);
         false ->
-            skip_until_field(VarAndSz, Fs, ByteMatches,
+            skip_until_field(VarAndSz, Fs, ByteMatches, AllFs,
                              MatchesAcc, [F | FVarsAcc])
     end.
 
@@ -390,38 +432,60 @@ member_and_rest(_, []) ->
 
 %% Replace a field with a single var with a direct match.
 %% Skip reserved fields.
-replace_single_var([{F, [{Var, _}]} | Fs], Matches, FVarsAcc) ->
-    case proplists:get_value(id, F) of
-        "" ->
-            replace_single_var(Fs, Matches, FVarsAcc);
-        "reserved" ->
-            replace_single_var(Fs, Matches, FVarsAcc);
+replace_single_var([{F, [{Var, _}]} | Fs], Matches, AllFs, FVarsAcc) ->
+    case proplists:get_value(type, F) of
+        reserved ->
+            replace_single_var(Fs, Matches, AllFs, FVarsAcc);
         _ ->
             Matches1 =
                 lists:keyreplace(Var, 1, Matches,
-                                 {matched, format_field(F, true)}),
-            replace_single_var(Fs, Matches1, FVarsAcc)
+                                 {matched, format_field(F, true, AllFs)}),
+            replace_single_var(Fs, Matches1, AllFs, FVarsAcc)
     end;
-replace_single_var([FVar | Fs], Matches, FVarsAcc) ->
-    replace_single_var(Fs, Matches, [FVar | FVarsAcc]);
-replace_single_var([], Matches, FVarsAcc) ->
+replace_single_var([FVar | Fs], Matches, AllFs, FVarsAcc) ->
+    replace_single_var(Fs, Matches, AllFs, [FVar | FVarsAcc]);
+replace_single_var([], Matches, _AllFs, FVarsAcc) ->
     {Matches, lists:reverse(FVarsAcc)}.
+
+%% Remove spare / reserved fields at the end; we will match on _/bitstring
+%% anyway.
+strip_matches(Matches, FVars) ->
+    RMatches = lists:reverse(Matches),
+    strip_matches0(RMatches, FVars).
+
+strip_matches0([{[$_ | _], _} = Vb | T] = L, FVars) ->
+    case is_used(Vb, FVars) of
+        false ->
+            strip_matches0(T, FVars);
+        true ->
+            lists:reverse(L)
+    end;
+strip_matches0(L, _) ->
+    lists:reverse(L).
+
+is_used(Vb, FVars) ->
+    lists:any(
+      fun({_F, Vbs}) ->
+              lists:member(Vb, Vbs)
+      end, FVars).
 
 format_matches(Matches) ->
     catmap(fun({matched, Str}, _, _) ->
                    Str;
-              ({Var, NBits}, _, _) ->
-                   [Var, ":", integer_to_list(NBits)]
+              ({Var, NBits}, _, _) when is_integer(NBits) ->
+                   [Var, ":", integer_to_list(NBits)];
+              ({Var, NBitsVar}, _, _) ->
+                   [Var, ":", NBitsVar]
            end, Matches, [], ",").
 
-format_field_variables([], _) ->
+format_field_variables([], _, _) ->
     "";
-format_field_variables(FVars, PreOrPost) ->
+format_field_variables(FVars, AllFs, PreOrPost) ->
     [if PreOrPost == pre -> ",";
         true -> ""
      end,
      catmap(fun({F, Vars}, _, _) ->
-                    ["<<", format_field(F, false), ">> = <<",
+                    ["<<", format_field(F, false, AllFs), ">> = <<",
                      catmap(fun({Var, VSz}, _Last, _) ->
                                     [Var, ":", integer_to_list(VSz)]
                             end, Vars, [], ","),
@@ -443,7 +507,7 @@ format_guard_matches(FVars) ->
                 ">>"]
        end, FVars, [], ",").
 
-format_field(F, DirectMatch) ->
+format_field(F, DirectMatch, AllFs) ->
     {Var, IsMatch} =
          case proplists:get_value(match,F) of
              undefined ->
@@ -452,7 +516,24 @@ format_field(F, DirectMatch) ->
                  {integer_to_list(Match), true}
          end,
     Id = proplists:get_value(id, F),
-    Size = proplists:get_value(length, F),
+    Size =
+        case proplists:get_value(length, F) of
+            Len when is_integer(Len) ->
+                integer_to_list(Len);
+            undefined ->
+                case proplists:get_value(bit_length_field, F) of
+                    Fn when is_integer(Fn) ->
+                        LenF = find_field(Fn, AllFs),
+                        get_var(LenF);
+                    undefined ->
+                        case proplists:get_value(type, F) of
+                            string_variable_short ->
+                                -1;
+                            string_variable_medium ->
+                                -2
+                        end
+                end
+        end,
     Signed = proplists:get_value(signed, F, false),
     Type   = proplists:get_value(type, F, int),
     Endian = if DirectMatch -> "little-";
@@ -465,25 +546,36 @@ format_field(F, DirectMatch) ->
                   float -> [Endian, "float"];
                   binary -> "bitstring";
                   enum -> [Endian, "unsigned"];
+                  enum2 -> [Endian, "unsigned"];
                   bits -> [Endian, "unsigned"];
                   bcd -> "bitstring";     %% interpret later
                   _string -> "bitstring"  %% interpret later
               end,
-    if IsMatch andalso BitType == "bitstring" ->
-            [Var,":",integer_to_list(Size)];
+    if Size == -1 ->
+            [Var, "_L:8", ",", Var, ":(", Var, "_L-1)/binary"];
+       Size == -2 ->
+            [Var, "_L:16", ",", Var, ":(", Var, "_L-2)/binary"];
+       IsMatch andalso BitType == "bitstring" ->
+            [Var,":",Size];
        Id == "data" ->
             [Var,"/",BitType];
        true ->
-            [Var,":",integer_to_list(Size),"/",BitType]
+            [Var,":",Size,"/",BitType]
     end.
 
+find_field(N, [F | T]) ->
+    case proplists:get_value(order, F) of
+        N ->
+            F;
+        _ ->
+            find_field(N, T)
+    end.
 
 %% filter reserved field not wanted in result list
 filter_reserved(Fs) ->
     lists:foldr(fun(F,Acc) ->
-                        case proplists:get_value(id,F) of
-                            "reserved" -> Acc;
-                            "" -> Acc;
+                        case proplists:get_value(type,F) of
+                            reserved -> Acc;
                             _ -> [F|Acc]
                         end
                 end, [], Fs).
@@ -494,12 +586,17 @@ format_binding(F,_Last,_) ->
             ID = get_id(F),
             Var = get_var(F),
             case proplists:get_value(type,F) of
-                string_a ->
-                    ["{",ID,",n2k:decode_string_a(",
+                string_fixed ->
+                    ["{",ID,",n2k:decode_string_fixed(",
+                     Var,")}"];
+                string_variable_short ->
+                    ["{",ID,",n2k:decode_string_variable(",
                      Var,")}"];
                 Type when Type == int;
                           Type == float;
                           Type == enum;
+                          Type == enum2;
+                          Type == bits;
                           Type == undefined ->
                     Length = proplists:get_value(length, F),
                     Signed = proplists:get_value(signed, F, false),
@@ -509,8 +606,15 @@ format_binding(F,_Last,_) ->
                            true ->
                                 (1 bsl Length) - 1
                         end,
-                    ["{",ID,",chk_exception(",
-                     integer_to_list(MaxVal), ",",Var,")}"];
+                    if Length == 1 ->
+                            ["{",ID,",",Var,"}"];
+                       Length =< 3 ->
+                            ["{",ID,",chk_exception1(",
+                             integer_to_list(MaxVal), ",",Var,")}"];
+                       true ->
+                            ["{",ID,",chk_exception2(",
+                             integer_to_list(MaxVal), ",",Var,")}"]
+                    end;
                 _ ->
                     ["{",ID,",",Var,"}"]
             end;
@@ -539,14 +643,11 @@ maybe_quote(String) ->
     end.
 
 get_var(F) ->
-    case proplists:get_value(id, F) of
-        "" ->
-            Order = proplists:get_value(order, F),
-            "_"++integer_to_list(Order);
-        "reserved" ->
+    case proplists:get_value(type, F) of
+        reserved ->
             "_";
-        ID ->
-            varname(ID)
+        _ ->
+            varname(proplists:get_value(id, F))
     end.
 
 varname(Cs0=[C|Cs]) ->
@@ -559,8 +660,7 @@ write_type_info(Fd, Ps) ->
     Tab = ets:new(a, []),
     mk_type_info(Ps, Tab),
     L = ets:tab2list(Tab),
-    write_type_info0(L, Fd),
-    write_enums(L, Fd).
+    write_type_info0(lists:sort(L), Fd).
 
 mk_type_info([{_PGN, Info} | T], Tab) ->
     PGNId = proplists:get_value(id, Info),
@@ -573,28 +673,17 @@ mk_type_info([], _) ->
 mk_type_info_fs(PGNId, [[{order, _}, {id, IdStr} | T] | Fs], Tab) ->
     Id = list_to_atom(IdStr),
     case get_type(T) of
-        {enums, Enums} ->
-            TypeName =
-                case ets:lookup(Tab, {enums, Enums}) of
-                    [{_, TypeName0}] ->
-                        TypeName0;
-                    [] ->
-                        TypeName0 =
-                            case ets:match(Tab, {{enums, '_'}, Id}) of
-                                [] ->
-                                    Id;
-                                _ ->
-                                    list_to_atom(PGNId ++ [$_ | IdStr])
-                            end,
-                        ets:insert(Tab, {{enums, Enums}, TypeName0}),
-                        TypeName0
-                end,
-            ets:insert(Tab, {{PGNId, Id}, {enums, TypeName}});
-        {int, Resolution, Decimals, Units} ->
+        {enum1, EnumName} ->
+            ets:insert(Tab, {{PGNId, Id}, {enum1, EnumName}});
+        {enum2, FieldId, EnumName} ->
+            ets:insert(Tab, {{PGNId, Id}, {enum2, FieldId, EnumName}});
+        {bit1, BitName} ->
+            ets:insert(Tab, {{PGNId, Id}, {bit1, BitName}});
+        {int, Resolution, Decimals, Unit} ->
             ets:insert(Tab, {{PGNId, Id},
-                             {int, Resolution, Decimals, Units}});
-        {float, Units} ->
-            ets:insert(Tab, {{PGNId, Id}, {float, Units}});
+                             {int, Resolution, Decimals, Unit}});
+        {float, Unit} ->
+            ets:insert(Tab, {{PGNId, Id}, {float, Unit}});
         _ ->
             ok
     end,
@@ -602,12 +691,14 @@ mk_type_info_fs(PGNId, [[{order, _}, {id, IdStr} | T] | Fs], Tab) ->
 mk_type_info_fs(_, [], _) ->
     ok.
 
-
 get_type(Info) ->
-    case proplists:get_value(enums, Info) of
-        undefined ->
-            Units =
-                list_to_atom(proplists:get_value(units, Info, "undefined")),
+    case
+        {proplists:get_value(enum, Info),
+         proplists:get_value(enum2, Info),
+         proplists:get_value(bit, Info)}
+    of
+        {undefined, undefined, undefined} ->
+            Unit = list_to_atom(proplists:get_value(unit, Info, "undefined")),
             Resolution = proplists:get_value(resolution, Info),
             Decimals =
                 if Resolution /= undefined ->
@@ -617,7 +708,7 @@ get_type(Info) ->
                 end,
             case proplists:get_value(type, Info) of
                 float ->
-                    {float, Units};
+                    {float, Unit};
                 int ->
                     Resolution1 =
                         if Resolution == undefined ->
@@ -625,44 +716,66 @@ get_type(Info) ->
                            true ->
                                 Resolution
                         end,
-                    {int, Resolution1, Decimals, Units};
+                    {int, Resolution1, Decimals, Unit};
                 _ when Resolution /= undefined ->
-                    {int, Resolution, Decimals, Units};
+                    {int, Resolution, Decimals, Unit};
                 _ ->
                     undefined
             end;
-        Enums ->
-            {enums, Enums}
+        {EnumName, undefined, undefined} ->
+            {enum1, EnumName};
+        {undefined, Enum2Name, undefined} ->
+            {enum2,
+             list_to_atom(proplists:get_value(enum2_field, Info)),
+             Enum2Name};
+        {undefined, undefined, BitName} ->
+            {bit1, BitName}
     end.
 
-write_type_info0([{{enums, _}, _} | T], Fd) ->
+write_type_info0([{{PGNId, Id}, {enum1, EnumName}} | T], Fd) ->
+    io:format(Fd, "type_info(~p,~p) -> {enums, enums1_~s()};\n",
+              [list_to_atom(PGNId), Id, EnumName]),
     write_type_info0(T, Fd);
-write_type_info0([{{PGNId, Id}, {enums, TypeName}} | T], Fd) ->
-    io:format(Fd, "type_info(~s,~p) -> enums(~p);\n", [PGNId, Id, TypeName]),
+write_type_info0([{{PGNId, Id}, {enum2, FieldId, EnumName}} | T], Fd) ->
+    io:format(Fd, "type_info(~p,~p) -> {enums, ~p, enums2_~s()};\n",
+              [list_to_atom(PGNId), Id, FieldId, EnumName]),
+    write_type_info0(T, Fd);
+write_type_info0([{{PGNId, Id}, {bit1, BitName}} | T], Fd) ->
+    io:format(Fd, "type_info(~p,~p) -> {bits, bits1_~s()};\n",
+              [list_to_atom(PGNId), Id, BitName]),
     write_type_info0(T, Fd);
 write_type_info0([{{PGNId, Id}, Type} | T], Fd) ->
-    io:format(Fd, "type_info(~s,~p) -> ~9999p;\n", [PGNId, Id, Type]),
+    io:format(Fd, "type_info(~p,~p) -> ~9999p;\n",
+              [list_to_atom(PGNId), Id, Type]),
     write_type_info0(T, Fd);
 write_type_info0([], Fd) ->
-    io:format(Fd, "type_info(_,_) -> undefined.\n", []).
+    %% Add type_info for the fallback PGNs
+    io:format(Fd,
+"type_info(_,industryCode) ->
+    {enums, enums1_INDUSTRY_CODE()};
+ type_info(_,manufacturerCode) ->
+    {enums, enums1_MANUFACTURER_CODE()};
+ type_info(_,_) -> undefined.\n",
+               []).
 
-write_enums([{{enums, Enums}, TypeName} | T], Fd) ->
-    io:format(Fd, "enums(~p) -> {enums, ~99999p};\n", [TypeName, Enums]),
-    write_enums(T, Fd);
-write_enums([_ | T], Fd) ->
-    write_enums(T, Fd);
-write_enums([], Fd) ->
-    io:format(Fd, "enums(_) -> [].\n", []).
+write_enums1(Fd, [{EnumName, Enums} | T]) ->
+    io:format(Fd, "enums1_~s() ->\n    ~99999p.\n", [EnumName, Enums]),
+    write_enums1(Fd, T);
+write_enums1(_Fd, []) ->
+    ok.
 
-write_device_function_name(Fd) ->
-    lists:foreach(
-      fun({DeviceClassCode, DeviceFunctionCode, FunctioName}) ->
-              io:format(Fd, "device_function_name(~w,~w) -> \"~s\";\n",
-                        [DeviceClassCode, DeviceFunctionCode, FunctioName])
-      end,
-      device_function_names()),
-    io:format(Fd, "device_function_name(_,DeviceFunctionCode) ->"
-              " integer_to_list(DeviceFunctionCode).\n", []).
+write_enums2(Fd, [{EnumName, Enums} | T]) ->
+    io:format(Fd, "enums2_~s() ->\n    ~99999p.\n", [EnumName, Enums]),
+    write_enums2(Fd, T);
+write_enums2(_Fd, []) ->
+    ok.
+
+write_bits1(Fd, [{BitName, Bits} | T]) ->
+    io:format(Fd, "bits1_~s() ->\n    ~99999p.\n", [BitName, Bits]),
+    write_bits1(Fd, T);
+write_bits1(_Fd, []) ->
+    ok.
+
 
 write_erlang_module(Fd, Ps) ->
     write_erlang_module0(Ps, Fd),
@@ -708,123 +821,3 @@ reserved_word("bsr") -> true;
 reserved_word("or") -> true;
 reserved_word("xor") -> true;
 reserved_word(_) -> false.
-
-%% from: 20120726 nmea 2000 class & function codes v 2.00.pdf
-device_function_names() ->
-    %% DeviceClass Code, DeviceFunction Code, FunctioName}
-    [{10, 130, "Diagnostics"},
-     {10, 140, "Bus Traffic Logger"},
-
-     {20, 110, "Alarm Enunciator"},
-     {20, 130, "EPIRB"},
-     {20, 135, "MOB"},
-     {20, 140, "Voyage Data Recorder"},
-     {20, 150, "Camera"},
-
-     {25, 130, "PC Gateway"},
-     {25, 131, "NMEA 2000 to Analog Gateway"},
-     {25, 132, "Analog to NMEA 2000 Gateway"},
-     {25, 133, "NMEA 2000 bidirectional Analog Gateway"},
-     {25, 135, "NMEA 0183 Gateway"},
-     {25, 137, "NMEA 2000 to Wireless Gateway"},
-     {25, 140, "Router"},
-     {25, 150, "Bridge"},
-     {25, 160, "Repeater"},
-
-     {30, 130, "Binary Event Monitor"},
-     {30, 140, "Load Controller"},
-     {30, 141, "AC/DC Input"},
-     {30, 150, "Function Controller"},
-
-     {35, 140, "Engine"},
-     {35, 141, "DC Generator/Alternator"},
-     {35, 142, "Solar Panel"},
-     {35, 143, "Wind Generator"},
-     {35, 144, "Fuel Cell"},
-     {35, 145, "Network Power Supply"},
-
-     {35, 151, "AC Generator"},
-     {35, 152, "AC Bus Reports"},
-     {35, 153, "AC Mains (Utility/Shore)"},
-     {35, 154, "AC Output"},
-     {35, 160, "Power Converter - Battery Charger"},
-     {35, 161, "Power Converter - Battery Charger+Inverter"},
-     {35, 162, "Power Converter - Inverter"},
-     {35, 163, "Power Converter - DC"},
-     {35, 170, "Battery"},
-     {35, 180, "Engine Gateway"},
-
-     {40, 130, "Follow-up Controller"},
-     {40, 140, "Mode Controller"},
-     {40, 150, "Autopilot"},
-     {40, 155, "Rudder"},
-     {40, 160, "Heading Sensors"},
-     {40, 170, "Trim (Tabs)/Interceptors"},
-     {40, 180, "Attitude (Pitch, Roll, Yaw) Control"},
-
-     {50, 130, "Engineroom Monitoring"},
-     {50, 140, "Engine"},
-     {50, 141, "DC Generator/Alternator"},
-     {50, 150, "Engine Controller"},
-     {50, 151, "AC Generator"},
-     {50, 155, "Motor"},
-     {50, 160, "Engine Gateway"},
-     {50, 165, "Transmission"},
-     {50, 170, "Throttle/Shift Control"},
-     {50, 180, "Actuator"},
-     {50, 190, "Gauge Interface"},
-     {50, 200, "Gauge Large"},
-     {50, 210, "Gauge Small"},
-
-     {60, 130, "Depth"},
-     {60, 135, "Depth/Speed"},
-     {60, 136, "Depth/Speed/Temperature"},
-     {60, 140, "Ownship Attitude"},
-     {60, 145, "Ownship Position (GNSS)"},
-     {60, 150, "Ownship Position (Loran C)"},
-     {60, 160, "Turn Rate Indicator"},
-     {60, 170, "Integrated Navigation"},
-     {60, 175, "Integrated Navigation System"},
-     {60, 190, "Navigation Management"},
-     {60, 195, "AIS"},
-     {60, 200, "Radar"},
-     {60, 201, "Infrared Imaging"},
-     {60, 205, "ECDIS"},
-     {60, 210, "ECS"},
-     {60, 220, "Direction Finder"},
-     {60, 230, "Voyage Status"},
-
-     {70, 130, "EPIRB"},
-     {70, 140, "AIS"},
-     {70, 150, "DSC"},
-     {70, 160, "Data Receiver/Transceiver"},
-     {70, 170, "Satellite"},
-     {70, 180, "Radio-Telephone (MF/HF)"},
-     {70, 190, "VHF"},
-
-     {75, 130, "Temperature"},
-     {75, 140, "Pressure"},
-     {75, 150, "Fluid Level"},
-     {75, 160, "Flow"},
-     {75, 170, "Humidity"},
-
-     {80, 130, "Time/Date Systems"},
-     {80, 140, "VDR"},
-     {80, 150, "Integrated Instrumentation"},
-     {80, 160, "General Purpose Displays"},
-     {80, 170, "General Sensor Box"},
-     {80, 180, "Weather Instruments"},
-     {80, 190, "Transducer/General"},
-     {80, 200, "NMEA 0183 Converter"},
-
-     {85, 130, "Atmospheric"},
-     {85, 160, "Aquatic"},
-
-     {90, 130, "HVAC"},
-
-     {100, 130, "Scale (Catch)"},
-
-     {120, 130, "Display"},
-
-     {125, 130, "Multimedia Player"},
-     {125, 140, "Multimedia Controller"}].

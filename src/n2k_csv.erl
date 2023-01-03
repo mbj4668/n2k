@@ -33,6 +33,8 @@ read_csv_file(FName, F, InitAcc) ->
 
 read_csv_fd(Fd, F, Acc) ->
     case file:read_line(Fd) of
+        {ok, <<$#, _/binary>>} ->
+            read_csv_fd(Fd, F, Acc);
         {ok, Line0} ->
             Line =
                 case binary:last(Line0) of
@@ -51,7 +53,14 @@ read_csv_fd(Fd, F, Acc) ->
 decode_csv(Line) ->
     [TimeB, PriB, PGNB, SrcB, DstB, _SzB | Ds] =
         binary:split(Line, <<",">>, [global,trim_all]),
-    <<HrB:2/binary,$:,MinB:2/binary,$:,SecB:2/binary,$.,MsB:3/binary>> = TimeB,
+    case TimeB of
+        <<HrB:2/binary,$:,MinB:2/binary,$:,SecB:2/binary,$.,MsB:3/binary>> ->
+            ok;
+        <<_YYYY:4/binary,$-,_MM:2/binary,$-,_DD:2/binary,_Sep,
+          HrB:2/binary,$:,MinB:2/binary,$:,SecB:2/binary,$.,MsB:3/binary,
+          _/binary>> ->
+            ok
+    end,
     Hr = binary_to_integer(HrB),
     Min = binary_to_integer(MinB),
     Sec = binary_to_integer(SecB),

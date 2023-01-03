@@ -1,14 +1,14 @@
 %%% Library functions for NMEA encoding / decoding and formatting.
 -module(n2k).
 
--export([decode_nmea_init/0, decode_nmea/2, fmt_error/1]).
--export([fmt_nmea_message/1]).
+-export([decode_nmea_init/0, decode_nmea/2]).
+-export([fmt_nmea_message/1, fmt_error/1]).
 -export([encode_canid/1, decode_canid/1]).
--export([decode_string_a/1, decode_string/2]).
+-export([decode_string_fixed/1, decode_string_variable/1]).
 -export([fmt_ms_time/1, fmt_date/1, fmt_hex/2]).
 -export([encode_nmea_message/2, encode_nmea_fast_message/3]).
 
--export_type([canid/0, frame/0, message/0, dec_error/0, dec_state/0]).
+-export_type([canid/0, frame/0, message/0, data/0, dec_error/0, dec_state/0]).
 
 %% A CANID is a 29-bit number.  When decoded, it is a canid().
 -type canid() ::
@@ -32,8 +32,13 @@
         {
           Time :: integer() % milliseconds
         , Id   :: canid()
-        , Data :: {PGNName :: atom()
-                 , Fields :: [{FieldName :: atom(), Val :: term()}]}
+        , Data :: data()
+        }.
+
+-type data() ::
+        {
+          PGNName :: atom()
+        , Fields :: [{FieldName :: atom(), Val :: term()}]
         }.
 
 -type dec_error() ::
@@ -68,6 +73,9 @@ decode_nmea(Frame, Map0) ->
         false ->
             Message = {Time, Id, n2k_pgn:decode(PGN, Data)},
             {true, Message, Map0};
+        true when byte_size(Data) > 8 -> % complete message
+            Message = {Time, Id, n2k_pgn:decode(PGN, Data)},
+            {true, Message, Map0};
         true ->
             case Data of
                 <<Order:3,0:5,PLen,PayLoad/binary>> ->
@@ -100,7 +108,7 @@ decode_nmea(Frame, Map0) ->
                                             io:format("** error: ~p ~p\n",
                                                       [_X, Stacktrace]),
                                             {error,
-                                             {pgn_decode_error, Src, PGN}, Map0}
+                                             {pgn_decode_error, Src, PGN}, Map1}
                                     end
                             end;
                         _ ->
@@ -121,34 +129,35 @@ fmt_error({frame_loss, Src, PGN, Order, PrevIndex}) ->
 fmt_error({pgn_decode_error, Src, PGN}) ->
     io_lib:format("warning: pgn ~w:~w, could not decode\n", [Src,PGN]).
 
+-define(R1, 0). % Reserved bit in CAN header. Always 0 in NMEA2000.
+
 -spec encode_canid(canid()) -> integer().
 encode_canid({Pri,PGN,Src,Dst}) ->
-    IDA = (PGN bsr 8) band 16#ff,
-    if IDA < 240 ->
-            <<ID:29>> = <<Pri:3,0:1,(PGN bsr 8):9,Dst:8,Src:8>>,
+    PF = (PGN bsr 8) band 16#ff,
+    if PF < 240 ->
+            %% PDU 1 - destination addressable
+            <<ID:29>> = <<Pri:3,?R1:1,(PGN bsr 8):9,Dst:8,Src:8>>,
             ID;
        true ->
-            <<ID:29>> = <<Pri:3,0:1,PGN:17,Src:8>>,
+            %% PDU 2 - destination global
+            <<ID:29>> = <<Pri:3,?R1:1,PGN:17,Src:8>>,
             ID
     end.
-%encode_canid({Pri,PGN,Src,16#ff}) ->
-%    <<ID:29>> = <<Pri:3,0:1,PGN:17,Src:8>>,
-%    ID;
-%encode_canid({Pri,PGN,Src,Dst}) ->
-%    <<ID:29>> = <<Pri:3,0:1,(PGN bsr 8):9,Dst:8,Src:8>>,
-%    ID.
 
 -spec decode_canid(integer()) -> canid().
 decode_canid(CanId) ->
     case <<CanId:29>> of
-        <<Pri:3,_:1,DP:1,IDA:8,Dst:8,Src:8>> when IDA < 240 ->
-            PGN = (DP bsl 16) + (IDA bsl 8),
+        <<Pri:3,_R1:1,DP:1,PF:8,Dst:8,Src:8>> when PF < 240 ->
+            %% PDU 1 - destination addressable
+            PGN = (DP bsl 16) + (PF bsl 8),
             {Pri,PGN,Src,Dst};
-        <<Pri:3,_:1,PGN:17,Src:8>> ->
+        <<Pri:3,_R1:1,PGN:17,Src:8>> ->
+            %% PDU 2 - destination global
             {Pri,PGN,Src,16#ff}
     end.
 
-decode_string_a(Bin) ->
+%% string_fixed is N2K type DF63
+decode_string_fixed(Bin) ->
     case binary:last(Bin) of
         0 ->
             %% remove all fill chars - can't use NUL in re:run :(
@@ -157,6 +166,7 @@ decode_string_a(Bin) ->
             Bin0;
         Ch when Ch == 16#ff; Ch == $\s; Ch == $@ ->
             %% remove all fill chars
+            %% we assume that Ch isn't used in the middle of the string...
             {match, [{Pos, _End}]} = re:run(Bin, [Ch, $+, $$]),
             binary:part(Bin, 0, Pos);
         _ ->
@@ -166,29 +176,13 @@ decode_string_a(Bin) ->
 -define(CTRL_UNICODE, 0). % UTF-16
 -define(CTRL_ASCII, 1). % actually, latin-1
 
-%% string_lau is N2K type DF50
-decode_string(string_lau, <<Len,?CTRL_ASCII,Str:Len/binary,Rest/binary>>) ->
-    {Str, Rest};
-decode_string(string_lau, <<Len,?CTRL_UNICODE,Str:Len/binary,Rest/binary>>) ->
-    {unicode:characters_to_binary(Str, utf16, utf8), Rest};
-%% string is unclear
-decode_string(string, <<2,Bin/binary>>) ->
-    %% the string ends with byte 0x01
-    [Str, Rest] = binary:split(Bin, <<1>>),
-    {Str, Rest};
-decode_string(string, <<3,1,0,Rest/binary>>) ->
-    %% empty string
-    {<<>>, Rest};
-decode_string(string, <<Len0,1,Bin/binary>>) when Len0 > 3 ->
-    Len = Len0 - 2,
-    <<Str:Len/binary,Rest/binary>> = Bin,
-    {Str, Rest};
-decode_string(string, <<_Unknown,Rest/binary>>) ->
-    %% is this really correct?
-    {<<>>, Rest};
-%% string_lz is proprietary fusion for old PGNs
-decode_string(string_lz, <<Len,Str:Len/binary,0,Rest/binary>>) ->
-    {Str, Rest}.
+%% string_variable is N2K type DF50/DF51
+decode_string_variable(<<?CTRL_ASCII,Str/binary>>) ->
+    Str;
+decode_string_variable(<<?CTRL_UNICODE,Str/binary>>) ->
+    unicode:characters_to_binary(Str, {utf16, little}, utf8);
+decode_string_variable(Bin) ->
+    Bin.
 
 -spec encode_nmea_message(canid(), binary()) ->
           {integer(), binary()}.
@@ -255,6 +249,35 @@ fmt_date({Y,M,D}) ->
     io_lib:format("~4.4.0w-~2.2.0w-~2.2.0w",
                   [Y,M,D]).
 
+fmt_time(VInt, Decimals) ->
+    V = integer_to_list(VInt),
+    try
+        MsStr =
+            if Decimals > 0 ->
+                    [ $. | lists:sublist(V, length(V) - (Decimals - 1),
+                                         Decimals)];
+               true ->
+                    ""
+            end,
+        SStr =
+            if Decimals > 0 ->
+                    lists:sublist(V, length(V) - Decimals);
+               true ->
+                    V
+            end,
+        S = list_to_integer(SStr),
+        Sec = S rem 60,
+        R1 = S div 60,
+        Min = R1 rem 60,
+        R2 = R1 div 60,
+        Hr = R2 rem 24,
+        io_lib:format("~2.2.0w:~2.2.0w:~2.2.0w~s",
+                      [Hr, Min, Sec, MsStr])
+    catch
+        _:_ ->
+            V
+    end.
+
 fmt_hex(<<X>>, _) ->
     [hex(X bsr 4),hex(X)];
 fmt_hex(<<X,Bin/binary>>, Separator) ->
@@ -272,11 +295,13 @@ fmt_val(MsgName, Name, Val, Fields) ->
     case n2k_pgn:type_info(MsgName, Name) of
         {int, Resolution, Decimals, Units} ->
             case Units of
-                days ->
+                d ->
                     Date =
                         calendar:gregorian_days_to_date(
                           calendar:date_to_gregorian_days({1970,1,1}) + Val),
                     fmt_date(Date);
+                s ->
+                    fmt_time(Val, Decimals);
                 rad ->
                     io_lib:format("~.1f deg",
                                   [Val*Resolution * 180 / math:pi()]);
@@ -301,15 +326,32 @@ fmt_val(MsgName, Name, Val, Fields) ->
                 _ ->
                     integer_to_list(Val)
             end;
-        _ when Name == deviceFunction ->
-            case proplists:get_value(deviceClass, Fields) of
+        {enums, OtherFieldId, Enums} ->
+            case proplists:get_value(OtherFieldId, Fields) of
                 undefined ->
-                    io_lib:format("~999p", [Val]);
-                Class ->
-                    n2k_pgn:device_function_name(Class, Val)
+                    integer_to_list(Val);
+                OtherVal ->
+                    case lists:keyfind({OtherVal, Val}, 2, Enums) of
+                        {Str, _} ->
+                            Str;
+                        _ ->
+                            integer_to_list(Val)
+                    end
             end;
+        {bits, _Bits} ->
+            %% FIXME: NYI.  loop over all bits and see which ones are set
+            %% in Val.
+            integer_to_list(Val);
         _ ->
             case n2k_pgn:erlang_module(MsgName) of
+                false when is_binary(Val) ->
+                    ValL = binary_to_list(Val),
+                    case io_lib:printable_list(ValL) of
+                        true ->
+                            io_lib:format("\"~s\"", [ValL]);
+                        false ->
+                            io_lib:format("~999p", [Val])
+                    end;
                 false ->
                     io_lib:format("~999p", [Val]);
                 {true, Mod} ->

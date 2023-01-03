@@ -6,7 +6,13 @@ MODULES = n2k n2k_pgn n2k_raw n2k_csv n2k_can n2k_dat $(XTRA_MODULES)
 
 BEAM = $(MODULES:%=../ebin/%.beam)
 
-PGNS_XML = $(wildcard *pgns.xml)
+BEHAVIOR_BEAMS = n2k_pgn_callback.beam
+
+# Include used-defined extra rules
+#-include ../system-config.mk
+
+#PGNS_XML = pgns.xml $(custom_pgns)
+PGNS_XML = pgns.xml $(wildcard pgns-*.xml)
 
 all: $(BEAM) ../ebin/n2k.app
 
@@ -17,8 +23,8 @@ APPSCRIPT = '$$vsn=shift; $$mods=""; while(@ARGV){ \
 
 # syntax w/ | below means that ../ebin is an order-only-prerequisite, which
 # means the beam isn't rebuilt every time ../bin changes
-../ebin/%.beam: %.erl | ../ebin
-	erlc -o ../ebin $<
+../ebin/%.beam: %.erl $(BEHAVIOR_BEAMS) | ../ebin
+	erlc -pa . -o ../ebin $<
 
 ../ebin/%.app: %.app.src Makefile | ../ebin
 	perl -e $(APPSCRIPT) "$(VSN)" $(MODULES) < $< > $@
