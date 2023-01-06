@@ -8,12 +8,14 @@ BEAM = $(MODULES:%=../ebin/%.beam)
 
 BEHAVIOR_BEAMS = n2k_pgn_callback.beam
 
-MANUFACTURERS = all
+# all | none | <integer>,<integer>,...
+# set this to control code generation of manufacturer proprietary PGNs
+MANUFACTURER_CODES = all
 
 # Include used-defined extra rules
-#-include ../system-config.mk
+-include ../system-config.mk
 
-#PGNS_XML = pgns.xml $(custom_pgns)
+#PGNS_XML = pgns.xml $(CUSTOM_PGNS)
 PGNS_XML = pgns.xml $(wildcard pgns-*.xml)
 
 all: $(BEAM) ../ebin/n2k.app
@@ -35,7 +37,7 @@ n2k_pgn.erl: pgns.term gen_n2k_pgn.beam
 	erl -noshell -run gen_n2k_pgn gen $< $@
 
 pgns.term: gen_pgns_term.beam $(PGNS_XML)
-	erl -noshell -run gen_pgns_term gen $(MANUFACTURERS) $@ $(PGNS_XML)
+	erl -noshell -run gen_pgns_term gen $(MANUFACTURER_CODES) $@ $(PGNS_XML)
 
 %.beam: %.erl
 	erlc $<

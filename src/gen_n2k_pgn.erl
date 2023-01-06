@@ -37,10 +37,10 @@ save(File, Def, InFile) ->
             try
                 {PGNs, Enums1, Enums2, Bits1} = Def,
                 ok = write_header(Fd, InFile),
+                ok = write_pgn_functions(Fd, PGNs),
                 ok = write_enums1(Fd, Enums1),
                 ok = write_enums2(Fd, Enums2),
-                ok = write_bits1(Fd, Bits1),
-                ok = write_pgn_functions(Fd, PGNs)
+                ok = write_bits1(Fd, Bits1)
             catch
                 error:Reason:Stacktrace ->
                     {error, {Reason, Stacktrace}}
@@ -736,14 +736,17 @@ get_type(Info) ->
     end.
 
 write_type_info0([{{PGNId, Id}, {enum1, EnumName}} | T], Fd) ->
+    put({enum1, EnumName}, true),
     io:format(Fd, "type_info(~p,~p) -> {enums, enums1_~s()};\n",
               [list_to_atom(PGNId), Id, EnumName]),
     write_type_info0(T, Fd);
 write_type_info0([{{PGNId, Id}, {enum2, FieldId, EnumName}} | T], Fd) ->
+    put({enum2, EnumName}, true),
     io:format(Fd, "type_info(~p,~p) -> {enums, ~p, enums2_~s()};\n",
               [list_to_atom(PGNId), Id, FieldId, EnumName]),
     write_type_info0(T, Fd);
 write_type_info0([{{PGNId, Id}, {bit1, BitName}} | T], Fd) ->
+    put({bit1, BitName}, true),
     io:format(Fd, "type_info(~p,~p) -> {bits, bits1_~s()};\n",
               [list_to_atom(PGNId), Id, BitName]),
     write_type_info0(T, Fd);
@@ -770,19 +773,34 @@ write_type_info0([], Fd) ->
               []).
 
 write_enums1(Fd, [{EnumName, Enums} | T]) ->
-    io:format(Fd, "enums1_~s() ->\n    ~99999p.\n", [EnumName, Enums]),
+    case get({enum1, EnumName}) of
+        true ->
+            io:format(Fd, "enums1_~s() ->\n    ~99999p.\n", [EnumName, Enums]);
+        _ ->
+            ok
+    end,
     write_enums1(Fd, T);
 write_enums1(_Fd, []) ->
     ok.
 
 write_enums2(Fd, [{EnumName, Enums} | T]) ->
-    io:format(Fd, "enums2_~s() ->\n    ~99999p.\n", [EnumName, Enums]),
+    case get({enum2, EnumName}) of
+        true ->
+            io:format(Fd, "enums2_~s() ->\n    ~99999p.\n", [EnumName, Enums]);
+        _ ->
+            ok
+    end,
     write_enums2(Fd, T);
 write_enums2(_Fd, []) ->
     ok.
 
 write_bits1(Fd, [{BitName, Bits} | T]) ->
-    io:format(Fd, "bits1_~s() ->\n    ~99999p.\n", [BitName, Bits]),
+    case get({bit1, BitName}) of
+        true ->
+            io:format(Fd, "bits1_~s() ->\n    ~99999p.\n", [BitName, Bits]);
+        _ ->
+            ok
+    end,
     write_bits1(Fd, T);
 write_bits1(_Fd, []) ->
     ok.

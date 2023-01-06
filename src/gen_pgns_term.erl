@@ -10,11 +10,12 @@
 
 -include_lib("xmerl/include/xmerl.hrl").
 
-gen([_Manufaturers, PgnsTermFile | PgnsXmlFiles]) ->
+gen([ManufacturersStr, PgnsTermFile | PgnsXmlFiles]) ->
     try
+        Manufacturers = parse_manufacturers(ManufacturersStr),
         case load_pgns_xml(PgnsXmlFiles) of
             {ok, Def0} ->
-                Def1 = process_def(Def0),
+                Def1 = process_def(Def0, Manufacturers),
                 case save(PgnsTermFile, Def1, PgnsXmlFiles) of
                     ok ->
                         init:stop(0);
@@ -27,10 +28,17 @@ gen([_Manufaturers, PgnsTermFile | PgnsXmlFiles]) ->
                 init:stop(1)
         end
     catch
-        _:Error1 ->
+        exit:Error1 ->
             io:format(standard_error, "** ~p\n", [Error1]),
             init:stop(1)
     end.
+
+parse_manufacturers("all") ->
+    all;
+parse_manufacturers("none") ->
+    [];
+parse_manufacturers(Str) ->
+    [list_to_integer(B) || B <- string:split(Str, ",")].
 
 save(File, Def, InFiles) ->
     case file:open(File, [write, {encoding, utf8}]) of
@@ -385,24 +393,65 @@ list_to_number(Value) ->
             list_to_float(Value)
     end.
 
-process_def({PGNs, Enums1, Enums2, Bits1}) ->
-    NewPGNs0 = filter_pgns(PGNs),
-    NewPGNs1 = patch_pgns(NewPGNs0),
+process_def({PGNs, Enums1, Enums2, Bits1}, Manufacturers) ->
+    NewPGNs0 = patch_pgns(PGNs),
+    NewPGNs1 = filter_pgns(NewPGNs0, Manufacturers),
     NewPGNs2 = expand_pgns(NewPGNs1),
     {NewPGNs2, Enums1, Enums2, Bits1}.
 
-filter_pgns(PGNs) ->
-    %% Remove all "fallback" definitions.  These are not proper definitons
-    %% anyway, and PGNs w/o fields.
+%% o  Remove all "fallback" definitions.  These are not proper
+%%    definitons anyway
+%% o  Remove all PGNs w/o fields.
+%% o  Remove unwanted manufacturer proprietary PGNs
+filter_pgns(PGNs, Manufacturers) ->
     [{PGN, Info} ||
         {PGN, Info} <- PGNs,
-        not lists:member({fallback, true}, Info),
-        lists:keymember(fields, 1, Info)].
+        (not lists:member({fallback, true}, Info))
+            andalso lists:keymember(fields, 1, Info)
+            andalso (Manufacturers == all
+                     orelse pick_pgn_p(Info, Manufacturers))].
+
+pick_pgn_p(Info, Manufacturers) ->
+    case lists:keyfind(manufacturerCode, 1, Info) of
+        {manufacturerCode, Code} ->
+            lists:member(Code, Manufacturers);
+        _ ->
+            true
+    end.
 
 patch_pgns(PGNs) ->
-    [{PGN, patch_info(PGN, Info)} ||
+    [{PGN, patch_manufacturer(
+             patch_info(PGN, Info))} ||
         {PGN, Info} <- PGNs].
 
+%% For each manufacturer proprietary PGN, add the manufacturerId to Info
+patch_manufacturer(Info) ->
+    case lists:keyfind(fields, 1, Info) of
+        {fields, Fs} ->
+            case find_manufacturer_code(Fs) of
+                false ->
+                    Info;
+                {true, Code} ->
+                    Info ++ [{manufacturerCode, Code}]
+            end;
+        _ ->
+            Info
+    end.
+
+find_manufacturer_code([F | T]) ->
+    case lists:member({id, "manufacturerCode"}, F) of
+        true ->
+            case lists:keyfind(match, 1, F) of
+                {match, Code} ->
+                    {true, Code};
+                false ->
+                    find_manufacturer_code(T)
+            end;
+        false ->
+            false
+    end;
+find_manufacturer_code([]) ->
+    false.
 
 %% According to "New NMEA 2000 Edition 3.00 Release",
 %% "20130121 nmea 2000 edition 3 00 release document.pdf",
