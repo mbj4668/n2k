@@ -9,6 +9,8 @@
 %%%  o  handle type bcd (decimal encoded number)
 %%%  o  126208 not handled, see below
 %%%  o  handle repeating fields
+%%%  o  better enum lookup - perhaps dense enums as a tuple
+%%%     and sparse as a assoc list?
 
 -module(gen_n2k_pgn).
 
@@ -432,18 +434,19 @@ member_and_rest(_, []) ->
 
 %% Replace a field with a single var with a direct match.
 %% Skip reserved fields.
-replace_single_var([{F, [{Var, _}]} | Fs], Matches, AllFs, FVarsAcc) ->
+replace_single_var([{F, [{Var, _} | T]} = FVar | Fs],
+                   Matches, AllFs, FVarsAcc) ->
     case proplists:get_value(type, F) of
         reserved ->
             replace_single_var(Fs, Matches, AllFs, FVarsAcc);
-        _ ->
+        _ when T == [] -> % single var
             Matches1 =
                 lists:keyreplace(Var, 1, Matches,
                                  {matched, format_field(F, true, AllFs)}),
-            replace_single_var(Fs, Matches1, AllFs, FVarsAcc)
+            replace_single_var(Fs, Matches1, AllFs, FVarsAcc);
+        _ ->
+            replace_single_var(Fs, Matches, AllFs, [FVar | FVarsAcc])
     end;
-replace_single_var([FVar | Fs], Matches, AllFs, FVarsAcc) ->
-    replace_single_var(Fs, Matches, AllFs, [FVar | FVarsAcc]);
 replace_single_var([], Matches, _AllFs, FVarsAcc) ->
     {Matches, lists:reverse(FVarsAcc)}.
 
@@ -750,13 +753,21 @@ write_type_info0([{{PGNId, Id}, Type} | T], Fd) ->
     write_type_info0(T, Fd);
 write_type_info0([], Fd) ->
     %% Add type_info for the fallback PGNs
-    io:format(Fd,
-"type_info(_,industryCode) ->
+    lists:foreach(
+      fun(PGN) ->
+              io:format(Fd,
+"type_info(~s,industryCode) ->
     {enums, enums1_INDUSTRY_CODE()};
- type_info(_,manufacturerCode) ->
+ type_info(~s,manufacturerCode) ->
     {enums, enums1_MANUFACTURER_CODE()};
- type_info(_,_) -> undefined.\n",
-               []).
+", [PGN, PGN])
+      end, [manufacturerProprietaryFastPacketGlobal,
+            manufacturerProprietarySingleFrameGlobal,
+            manufacturerProprietarySingleFrameAddressable,
+            manufacturerProprietaryFastPacketAddressable]),
+    io:format(Fd,
+"type_info(_,_) -> undefined.\n",
+              []).
 
 write_enums1(Fd, [{EnumName, Enums} | T]) ->
     io:format(Fd, "enums1_~s() ->\n    ~99999p.\n", [EnumName, Enums]),

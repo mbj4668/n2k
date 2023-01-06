@@ -122,7 +122,7 @@ decode_nmea(Frame, Map0) ->
             {true, Message, Map0}
     end.
 
--spec fmt_error(dec_error()) -> string().
+-spec fmt_error(dec_error()) -> io_lib:chars().
 fmt_error({frame_loss, Src, PGN, Order, PrevIndex}) ->
     io_lib:format("warning: pgn ~w:~w, order ~w, frame lost ~w\n",
                   [Src, PGN, Order, PrevIndex]);
@@ -221,7 +221,7 @@ mk_fast_frames(Order, Index, Pos, PLen, Payload) ->
     end.
 
 
--spec fmt_nmea_message(message()) -> string().
+-spec fmt_nmea_message(message()) -> iodata().
 fmt_nmea_message({Time, {Pri, PGN, Src, Dst}, {MsgName, Fields}}) ->
     Fs =
         try
@@ -230,9 +230,10 @@ fmt_nmea_message({Time, {Pri, PGN, Src, Dst}, {MsgName, Fields}}) ->
                 io:format("**ERROR: ~p\n~p\n", [_X, S]),
                 [io_lib:format("** FIELDS: ~p", [Fields])]
         end,
-    io_lib:format("~s ~w ~3w ~3w ~6w ~w: ~s\n",
-                  [fmt_ms_time(Time), Pri, Src, Dst, PGN, MsgName,
-                   string:join(Fs, "; ")]).
+    [fmt_ms_time(Time),
+     io_lib:format(" ~w ~3w ~3w ~6w ~w:",
+                   [Pri, Src, Dst, PGN, MsgName]),
+     string:join(Fs, "; "), $\n].
 
 fmt_ms_time(Milliseconds) ->
     Ms = Milliseconds rem 1000,
@@ -348,7 +349,7 @@ fmt_val(MsgName, Name, Val, Fields) ->
                     ValL = binary_to_list(Val),
                     case io_lib:printable_list(ValL) of
                         true ->
-                            io_lib:format("\"~s\"", [ValL]);
+                            [$", ValL, $"];
                         false ->
                             io_lib:format("~999p", [Val])
                     end;

@@ -1,4 +1,4 @@
-VSN = 0.1.0
+VSN = 1.0.0-alpha.0
 
 XTRA_ERL = $(wildcard x_*.erl)
 XTRA_MODULES = $(XTRA_ERL:%.erl=%)
@@ -7,6 +7,8 @@ MODULES = n2k n2k_pgn n2k_raw n2k_csv n2k_can n2k_dat $(XTRA_MODULES)
 BEAM = $(MODULES:%=../ebin/%.beam)
 
 BEHAVIOR_BEAMS = n2k_pgn_callback.beam
+
+MANUFACTURERS = all
 
 # Include used-defined extra rules
 #-include ../system-config.mk
@@ -33,7 +35,7 @@ n2k_pgn.erl: pgns.term gen_n2k_pgn.beam
 	erl -noshell -run gen_n2k_pgn gen $< $@
 
 pgns.term: gen_pgns_term.beam $(PGNS_XML)
-	erl -noshell -run gen_pgns_term gen $@ $(PGNS_XML)
+	erl -noshell -run gen_pgns_term gen $(MANUFACTURERS) $@ $(PGNS_XML)
 
 %.beam: %.erl
 	erlc $<

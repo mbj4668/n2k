@@ -52,7 +52,7 @@ main(Args) ->
                      fun(Bin) -> file:write(OutFd, Bin) end};
                 error ->
                     {fun() -> ok end,
-                     fun(Bin) -> io:fwrite("~s", [Bin]) end}
+                     fun(Bin) -> io:put_chars(Bin) end}
             end,
         PrettyF =
             fun(Message) ->
@@ -332,10 +332,16 @@ fmt_device(Src, {_, PGNData}) ->
                   [Src,
                    get_enum(manufacturerCode, Code),
                    get_enum(deviceClass, Class),
-                   n2k_pgn:device_function_name(Class, Function)]).
+                   get_enum(deviceFunction, {Class, Function})]).
 
 get_enum(Field, Val) ->
-    {enums, Enums} = n2k_pgn:type_info(isoAddressClaim,Field),
+    Enums =
+        case n2k_pgn:type_info(isoAddressClaim, Field) of
+            {enums, Enums0} ->
+                Enums0;
+            {enums, _, Enums0} ->
+                Enums0
+        end,
     case lists:keyfind(Val, 2, Enums) of
         {Str, _} ->
             Str;

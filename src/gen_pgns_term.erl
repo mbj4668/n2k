@@ -10,19 +10,25 @@
 
 -include_lib("xmerl/include/xmerl.hrl").
 
-gen([PgnsTermFile | PgnsXmlFiles]) ->
-    case load_pgns_xml(PgnsXmlFiles) of
-        {ok, Def0} ->
-            Def1 = patch_def(Def0),
-            case save(PgnsTermFile, Def1, PgnsXmlFiles) of
-                ok ->
-                    init:stop(0);
-                Error ->
-                    io:format("** ~p\n", [Error]),
-                    init:stop(1)
-            end;
-        Error ->
-            io:format("** ~p\n", [Error]),
+gen([_Manufaturers, PgnsTermFile | PgnsXmlFiles]) ->
+    try
+        case load_pgns_xml(PgnsXmlFiles) of
+            {ok, Def0} ->
+                Def1 = process_def(Def0),
+                case save(PgnsTermFile, Def1, PgnsXmlFiles) of
+                    ok ->
+                        init:stop(0);
+                    Error ->
+                        io:format(standard_error, "** ~p\n", [Error]),
+                        init:stop(1)
+                end;
+            Error ->
+                io:format(standard_error, "** ~p\n", [Error]),
+                init:stop(1)
+        end
+    catch
+        _:Error1 ->
+            io:format(standard_error, "** ~p\n", [Error1]),
             init:stop(1)
     end.
 
@@ -112,10 +118,6 @@ pgn_info([{'Description',_As,Vs}|T],PGN,Ps) ->
     pgn_info(T, PGN, [{description, string(Vs)}|Ps]);
 pgn_info([{'ErlangModule',_As,Vs}|T],PGN,Ps) ->
     pgn_info(T, PGN, [{erlang_module, string(Vs)}|Ps]);
-pgn_info([{'Length',_As,[Value]}|T],PGN,Ps) ->
-    pgn_info(T, PGN, [{length, list_to_integer(Value)}|Ps]);
-pgn_info([{'MinLength',_As,[Value]}|T],PGN,Ps) ->
-    pgn_info(T, PGN, [{min_length, list_to_integer(Value)}|Ps]);
 pgn_info([{'Type',_As,[Value]}|T],PGN,Ps) ->
     Type = case Value of
                "Single" -> single;
@@ -156,6 +158,10 @@ pgn_info([{'Explanation',_As,_Cs}|T],PGN,Ps) ->
 pgn_info([{'URL',_As,_Cs}|T],PGN,Ps) ->
     pgn_info(T, PGN, Ps);
 pgn_info([{'FieldCount',_As,_Cs}|T],PGN,Ps) ->
+    pgn_info(T, PGN, Ps);
+pgn_info([{'Length',_As,_Cs}|T],PGN,Ps) ->
+    pgn_info(T, PGN, Ps);
+pgn_info([{'MinLength',_As,_Cs}|T],PGN,Ps) ->
     pgn_info(T, PGN, Ps);
 pgn_info([{'TransmissionIrregular',_As,_Cs}|T],PGN,Ps) ->
     pgn_info(T, PGN, Ps);
@@ -256,7 +262,7 @@ enums1([], Acc) ->
 enumpairs([{'EnumPair',As,_Cs}|T]) ->
     Name = proplists:get_value('Name', As),
     Value = proplists:get_value('Value', As),
-    [{Name, list_to_integer(Value)} | enumpairs(T)];
+    [{list_to_binary(Name), list_to_integer(Value)} | enumpairs(T)];
 enumpairs([_ | T]) ->
     enumpairs(T);
 enumpairs([]) ->
@@ -379,13 +385,24 @@ list_to_number(Value) ->
             list_to_float(Value)
     end.
 
-patch_def({PGNs, Enums1, Enums2, Bits1}) ->
+process_def({PGNs, Enums1, Enums2, Bits1}) ->
+    NewPGNs0 = filter_pgns(PGNs),
+    NewPGNs1 = patch_pgns(NewPGNs0),
+    NewPGNs2 = expand_pgns(NewPGNs1),
+    {NewPGNs2, Enums1, Enums2, Bits1}.
+
+filter_pgns(PGNs) ->
     %% Remove all "fallback" definitions.  These are not proper definitons
-    %% anyway.
-    NewPGNs = [{PGN, patch_info(PGN, Info)} ||
-                  {PGN, Info} <- PGNs,
-                  not lists:member({fallback, true}, Info)],
-    {NewPGNs, Enums1, Enums2, Bits1}.
+    %% anyway, and PGNs w/o fields.
+    [{PGN, Info} ||
+        {PGN, Info} <- PGNs,
+        not lists:member({fallback, true}, Info),
+        lists:keymember(fields, 1, Info)].
+
+patch_pgns(PGNs) ->
+    [{PGN, patch_info(PGN, Info)} ||
+        {PGN, Info} <- PGNs].
+
 
 %% According to "New NMEA 2000 Edition 3.00 Release",
 %% "20130121 nmea 2000 edition 3 00 release document.pdf",
@@ -393,15 +410,55 @@ patch_def({PGNs, Enums1, Enums2, Bits1}) ->
 %% However, it is only added to three of these PGNs in canboat.
 %% Since it seems that many devices don't send this, we remove it.
 patch_info(129038, Info) ->
-    remove_last_fields(Info, 1);
+    patch_last(Info);
 patch_info(129809, Info) ->
-    remove_last_fields(Info, 1);
+    patch_last(Info);
 patch_info(129810, Info) ->
-    remove_last_fields(Info, 1);
+    patch_last(Info);
 patch_info(_, Info) ->
     Info.
 
-remove_last_fields(Info, N) ->
+patch_last(Info) ->
     {fields, Fs0} = lists:keyfind(fields, 1, Info),
-    Fs1 = lists:sublist(Fs0, length(Fs0) - N),
+    [Last | T] = lists:reverse(Fs0),
+    Last1 = Last ++ [{new_in, "2.000"}],
+    Fs1 = lists:reverse([Last1 | T]),
     lists:keyreplace(fields, 1, Info, {fields, Fs1}).
+
+expand_pgns(PGNs) ->
+    NewPGNsRev =
+        lists:foldl(
+          fun({PGN, Info} = H, Acc) ->
+                  {fields, Fs} = lists:keyfind(fields, 1, Info),
+                  F = lists:last(Fs),
+                  case proplists:get_value(new_in, F) of
+                      undefined ->
+                          [H | Acc];
+                      NewIn ->
+                          add_variations(lists:reverse(Fs), NewIn,
+                                         PGN, Info, [H | Acc])
+                  end
+          end, [], PGNs),
+    lists:reverse(NewPGNsRev).
+
+%% Generate pgn definitions where all fields with the same NewIn are
+%% removed.
+%% For example, if we have A,B,C[new_in: 2],D[new_in:2],E[new_in:3]
+%% we generate 3 variations:
+%%  A,B,C,D,E
+%%  A,B,C,D,
+%%  A,B
+add_variations([F | T], NewIn, PGN, Info, Acc) ->
+    case proplists:get_value(new_in, F) of
+        NewIn ->
+            add_variations(T, NewIn, PGN, Info, Acc);
+        undefined ->
+            Fs1 = lists:reverse([F | T]),
+            [{PGN, lists:keyreplace(fields, 1, Info, {fields, Fs1})} | Acc];
+        NewIn1 ->
+            Fs1 = lists:reverse([F | T]),
+            Acc1 =
+                [{PGN, lists:keyreplace(fields, 1, Info, {fields, Fs1})} |
+                 Acc],
+            add_variations(T, NewIn1, PGN, Info, Acc1)
+    end.
