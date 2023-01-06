@@ -59,7 +59,10 @@ decode_csv(Line) ->
         <<_YYYY:4/binary,$-,_MM:2/binary,$-,_DD:2/binary,_Sep,
           HrB:2/binary,$:,MinB:2/binary,$:,SecB:2/binary,$.,MsB:3/binary,
           _/binary>> ->
-            ok
+            ok;
+        <<_YYYY:4/binary,$-,_MM:2/binary,$-,_DD:2/binary,_Sep,
+          HrB:2/binary,$:,MinB:2/binary,$:,SecB:2/binary,_/binary>> ->
+            MsB = <<"0">>
     end,
     Hr = binary_to_integer(HrB),
     Min = binary_to_integer(MinB),
