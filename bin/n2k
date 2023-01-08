@@ -5,14 +5,17 @@
 %% Reads 'raw', 'csv', 'dat' and 'can' files, and converts
 %% to 'csv' or pretty text.
 
-%% Usage: n2k [-f csv | pretty | devices | errors]
-%%            [--src SrcId] [--pgn PGN] [-o <OutFile>]
-%%          <InFile>
-%% Default outformat is 'pretty'
-
 -define(CNT_MESSAGES, 1).
 -define(CNT_FAST_PACKET_ERRORS, 2).
 -define(CNT_SIZE, 2).
+
+%% Default outformat is 'pretty'
+usage(ExitCode) ->
+    io:format("usage: n2k [-q] [-f csv | pretty | devices | errors]"
+              " [--infmt raw | csv | dat | can]"
+              " [--src SrcId] [--pgn PGN]"
+              " [-o <OutFile>] <InFile>\n"),
+    halt(ExitCode).
 
 main(Args) ->
     ScriptName = script_name(),
@@ -163,8 +166,8 @@ main(Args) ->
                 can ->
                     n2k_can:read_can_file(InFName, F, FInitState)
             end,
-            if Fmt == pretty;
-               Fmt == errors ->
+            Quiet = maps:get(quiet, A, false),
+            if (not Quiet) andalso (Fmt == pretty orelse Fmt == errors) ->
                     Msgs = counters:get(Cnts, ?CNT_MESSAGES),
                     if Msgs > 0 ->
                             FastPacketErrors =
@@ -194,13 +197,6 @@ main(Args) ->
             io:format("** ~p\n  ~p\n", [_Error, _StackTrace]),
             usage(1)
     end.
-
-usage(ExitCode) ->
-    io:format("usage: n2k [-f csv | pretty | devices | errors]"
-              " [--infmt raw | csv | dat | can]"
-              " [--src SrcId] [--pgn PGN]"
-              " [-o <OutFile>] <InFile>\n"),
-    halt(ExitCode).
 
 ebin(ScriptName) ->
     %% The escript is located in .../n2k/bin
@@ -260,6 +256,8 @@ parse_args(["--src", Src | T], A) ->
     parse_args(T, A#{src => list_to_integer(Src)});
 parse_args(["--pgn", PGN | T], A) ->
     parse_args(T, A#{pgn => list_to_integer(PGN)});
+parse_args(["-q" | T], A) ->
+    parse_args(T, A#{quiet => true});
 parse_args(["-h" | _], _A) ->
     throw(help);
 parse_args([InFName], A) ->
