@@ -88,61 +88,88 @@ write_pgn_functions(Fd, Ps) ->
 
 %% generate the is_fast function
 write_is_fast(Fd, Ps) ->
-    FastL = [PGN || {PGN, Fs} <- Ps,
-                    fast == proplists:get_value(type, Fs)],
-    %% single ranges
-    io:format(
-      Fd,
-      "is_fast(PGN) when PGN =< 65535 -> false;\n",
-      []),
-    %% fast-packet propietary range, as defined by main N2k spec 3.4.1.2
-    io:format(
-      Fd,
-      "is_fast(PGN) when 130816 =< PGN andalso PGN =< 131071 -> true;\n",
-      []),
+    FastL0 = [PGN || {PGN, Fs} <- Ps,
+                     fast == proplists:get_value(type, Fs)],
+    %% add the fast manufacturer proprietary addressable PGN; we might have
+    %% removed it due to how we were compiled
+    FastL = [126720 | FastL0],
     %% mixed single/fast; only write the fast PGNs
     lists:foreach(
       fun(PGN) ->
               io:format(Fd, "is_fast(~p) -> true;\n", [PGN])
       end, lists:usort(FastL)),
+    %% fast-packet propietary range, as defined by main N2k spec 3.4.1.2
+    io:format(
+      Fd,
+      "is_fast(PGN) when 130816 =< PGN andalso PGN =< 131071 -> true;\n",
+      []),
     io:format(Fd, "is_fast(_) -> false.\n", []).
+
+%% We generate the decode function on the form:
+%%
+%%     decode(123456, __Data) ->
+%%         case __Data of
+%%             <<...> -> {..., ...}
+%%
+%% instead of:
+%%
+%%     decode(123456, <<...>>) ->
+%%         {..., ...}
+%%
+%% because it turns out that the beam loader makes a better
+%% optimization in the former case - it will do a binary search on the
+%% first argument in the former case, but a linear search in the
+%% latter case.
+write_decode(Fd, PGNs) ->
+    PGNs2 = collect_pgns(PGNs, []),
+    write_decode0(Fd, PGNs2).
+
+collect_pgns([{PGN, Info}, {PGN, _} = H | T], Acc) ->
+    collect_pgns([H | T], [Info | Acc]);
+collect_pgns([{PGN, Info} | T], Acc) ->
+    [{PGN, lists:reverse([Info | Acc])} |
+     collect_pgns(T, [])];
+collect_pgns([], []) ->
+    [].
 
 %% generate the decode function
 %% FIXME! repeating field need extra function to parse tail!
-write_decode(Fd, [{126208,_Info}|Ps]) ->
-    %% TODO: In order to implement this PGN we would need a generated table
-    %% of all PGNs and their fields.  For example
+write_decode0(Fd, [{126208,_Info}|Ps]) ->
+    %% TODO: In order to properly implement this PGN we would need a
+    %% generated table of all PGNs and their fields.  For example
     %% `pgn_field(PGN, FieldNumber)`.
-    write_decode(Fd, Ps);
-write_decode(Fd, [{PGN,Info}|Ps]) ->
-    write_decode(Fd, PGN, Info, ";"),
-    write_decode(Fd, Ps);
-write_decode(Fd, []) ->
+    write_decode0(Fd, Ps);
+write_decode0(Fd, [{PGN,Infos}|Ps]) ->
+    write_decode1(Fd, PGN, Infos),
+    write_decode0(Fd, Ps);
+write_decode0(Fd, []) ->
     %% Add decode of the fallback PGNs
     io:format(Fd,
-"decode(126720,
+" decode(PGN,Data)-> decode_unknown(PGN,Data).
+
+ decode_unknown(126720,
        <<_0:8,IndustryCode:3/little-unsigned,_2:2,_1:3,Data/bitstring>>)  ->
     <<ManufacturerCode:11/unsigned>> = <<_1:3,_0:8>>,
     {manufacturerProprietaryFastPacketAddressable,
      [{manufacturerCode,chk_exception2(2047,ManufacturerCode)},
       {industryCode,chk_exception1(7,IndustryCode)},
       {data,Data}]};
- decode(61184,
+ decode_unknown(61184,
        <<_0:8,IndustryCode:3/little-unsigned,_2:2,_1:3,Data/bitstring>>)  ->
     <<ManufacturerCode:11/unsigned>> = <<_1:3,_0:8>>,
     {manufacturerProprietarySingleFrameAddressable,
      [{manufacturerCode,chk_exception2(2047,ManufacturerCode)},
       {industryCode,chk_exception1(7,IndustryCode)},
       {data,Data}]};
- decode(PGN,
+ decode_unknown(PGN,
        <<_0:8,IndustryCode:3/little-unsigned,_2:2,_1:3,Data/bitstring>>)
-  when 65280 =< PGN andalso PGN =< 065535 ->
+  when 65280 =< PGN andalso PGN =< 65535 ->
     <<ManufacturerCode:11/unsigned>> = <<_1:3,_0:8>>,
     {manufacturerProprietarySingleFrameGlobal,
      [{manufacturerCode,chk_exception2(2047,ManufacturerCode)},
       {industryCode,chk_exception1(7,IndustryCode)},
       {data,Data}]};
- decode(PGN,
+ decode_unknown(PGN,
        <<_0:8,IndustryCode:3/little-unsigned,_2:2,_1:3,Data/bitstring>>)
   when 130816 =< PGN andalso PGN =< 131071 ->
     <<ManufacturerCode:11/unsigned>> = <<_1:3,_0:8>>,
@@ -150,10 +177,21 @@ write_decode(Fd, []) ->
      [{manufacturerCode,chk_exception2(2047,ManufacturerCode)},
       {industryCode,chk_exception1(7,IndustryCode)},
       {data,Data}]};
- decode(PGN,Data)->{unknown, [{pgn,PGN},{data,Data}]}.\n",
+ decode_unknown(PGN,Data)->{unknown, [{pgn,PGN},{data,Data}]}.\n",
               []).
 
-write_decode(Fd, PGN, Info, Term) ->
+
+write_decode1(Fd, PGN, Infos) ->
+    io:format(Fd, "decode(~p,__DATA) ->\n", [PGN]),
+    io:format(Fd, "  case __DATA of\n", []),
+    lists:foreach(
+      fun(Info) ->
+              write_decode_info(Fd, Info)
+      end, Infos),
+    io:format(Fd, "    _ ->\n      decode_unknown(~w,__DATA)\n", [PGN]),
+    io:format(Fd, "  end;\n", []).
+
+write_decode_info(Fd, Info) ->
     Fs = proplists:get_value(fields,Info,[]),
     Repeating = proplists:get_value(repeating_fields,Info,0),
     ID = get_id(Info),
@@ -167,27 +205,23 @@ write_decode(Fd, PGN, Info, Term) ->
         end,
     if
         Fixed  =:= [], Repeat =:= [] ->
-            io:format(Fd, "decode(~p,<<_/bitstring>>) ->\n  {~s,[]}~s\n",
-                      [PGN,
-                       ID,
-                       Term]);
+            io:format(Fd, "    <<_/bitstring>> ->\n  {~s,[]};\n",
+                      [ID]);
         Fixed =:= [] ->
             {RepeatMatches, RepeatBindings, []} =
-                format_fields(Repeat, PGN, Fs, pre),
-            io:format(Fd, "decode(~p,<<_Repeat/bitstring>>) ->\n  ~s{~s, "
-                      "lists:append([ [~s] || <<~s>> <= _Repeat ~s])}~s~s\n",
-                      [PGN,
-                       PreDecode,
+                format_fields(Repeat, Fs, pre),
+            io:format(Fd, "    <<_Repeat/bitstring>> ->\n  ~s{~s, "
+                      "lists:append([ [~s] || <<~s>> <= _Repeat ~s])}~s;\n",
+                      [PreDecode,
                        ID,
                        catmap(fun format_binding/3,filter_reserved(Repeat),
-                              {PGN, ID}, ","),
+                              undefined, ","),
                        RepeatMatches,
                        RepeatBindings,
-                       PostDecode,
-                       Term]);
+                       PostDecode]);
         Repeat =:= [] ->
             {FixedMatches, FixedBindings, FixedGuards} =
-                format_fields(Fixed, PGN, Fs, post),
+                format_fields(Fixed, Fs, post),
             Trail =
                 case proplists:get_value(id, lists:last(Fs)) of
                     "data" ->
@@ -195,10 +229,9 @@ write_decode(Fd, PGN, Info, Term) ->
                     _ ->
                         ",_/bitstring"
                 end,
-            io:format(Fd, "decode(~p,<<~s"++Trail++">>) ~s ->\n"
-                          "~s ~s{~s,[~s]}~s~s\n",
-                      [PGN,
-                       FixedMatches,
+            io:format(Fd, "    <<~s"++Trail++">> ~s ->\n"
+                          "~s ~s{~s,[~s]}~s;\n",
+                      [FixedMatches,
                        if FixedGuards == [] -> "";
                           true -> ["when ", FixedGuards]
                        end,
@@ -206,22 +239,20 @@ write_decode(Fd, PGN, Info, Term) ->
                        PreDecode,
                        ID,
                        catmap(fun format_binding/3, filter_reserved(Fixed),
-                              {PGN, ID}, ","),
-                       PostDecode,
-                       Term]);
+                              undefined, ","),
+                       PostDecode]);
        true ->
             {FixedMatches, FixedBindings, FixedGuards} =
-                format_fields(Fixed, PGN, Fs, post),
+                format_fields(Fixed, Fs, post),
             {_RepeatMatches, _RepeatBindings, []} =
-                format_fields(Repeat, PGN, Fs, pre),
-            io:format(Fd, "decode(~p,<<~s,_Repeat/bitstring>>) ~s ->\n"
+                format_fields(Repeat, Fs, pre),
+            io:format(Fd, "    <<~s,_Repeat/bitstring>> ~s ->\n"
                       "~s ~s{~s,[~s | "
 %% FIXME - the repeat handling code is not correct
 %                      "lists:append([ [~s] || <<~s>> <= _Repeat ~s])]"
                       "[]]"
                       "}~s~s\n",
-                      [PGN,
-                       FixedMatches,
+                      [FixedMatches,
                        if FixedGuards == [] -> "";
                           true -> ["when ", FixedGuards]
                        end,
@@ -229,13 +260,13 @@ write_decode(Fd, PGN, Info, Term) ->
                        PreDecode,
                        ID,
                        catmap(fun format_binding/3,filter_reserved(Fixed),
-                              {PGN, ID}, ","),
+                              undefined, ","),
 %                       catmap(fun format_binding/3,filter_reserved(Repeat),
-%                              {PGN, ID}, ","),
+%                              undefined, ","),
 %                       RepeatMatches,
 %                       RepeatBindings,
                        PostDecode,
-                       Term])
+                       ";"])
     end.
 
 
@@ -279,7 +310,7 @@ catmap(Fun, [F|Fs], Arg, Sep) ->
 %% If the PGN spec has a "match" field, we either match on it directly (if
 %% it is a simple field), or create a guard for it.
 
-format_fields(Fs, _PGN, AllFs, PreOrPost) ->
+format_fields(Fs,  AllFs, PreOrPost) ->
     {Matches0, FVars0} = field_matches(Fs, 0, 0, [], [], []),
     {Matches1, FVars1} = replace_bytes(Matches0, FVars0, AllFs, [], []),
     {Matches2, FVars2} = replace_single_var(FVars1, Matches1, AllFs, []),

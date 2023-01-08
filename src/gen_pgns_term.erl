@@ -394,7 +394,7 @@ list_to_number(Value) ->
     end.
 
 process_def({PGNs, Enums1, Enums2, Bits1}, Manufacturers) ->
-    NewPGNs0 = patch_pgns(PGNs),
+    NewPGNs0 = patch_pgns(lists:keysort(1, PGNs)),
     NewPGNs1 = filter_pgns(NewPGNs0, Manufacturers),
     NewPGNs2 = expand_pgns(NewPGNs1),
     {NewPGNs2, Enums1, Enums2, Bits1}.
