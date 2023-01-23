@@ -199,6 +199,14 @@ field([{'Match',_,[Value]}|T], Fs, Es) ->
     field(T, [{match,list_to_integer(Value)}|Fs], Es);
 field([{'FieldType',_,[Value]}|T], Fs, Es) ->
     field(T, [{type,field_type(Value)}|Fs], Es);
+field([{'RangeMax',_,[Value]}|T], Fs, Es) ->
+    try list_to_integer(Value) of
+        RangeMax ->
+            field(T, [{range_max,RangeMax}|Fs], Es)
+    catch
+        _:_ ->
+            field(T, Fs, Es)
+    end;
 field([{'LookupBitEnumeration',_,[Value]}|T], Fs, Es) ->
     field(T, [{bit,Value}|Fs], Es);
 field([{'LookupEnumeration',_,[Value]}|T], Fs, Es) ->
@@ -232,8 +240,6 @@ field([{'BitStart',_,[_Value]}|T], Fs, Es) ->  %% not used
 field([{'BitOffset',_,[_Value]}|T], Fs, Es) -> %% not used
     field(T, Fs, Es);
 field([{'RangeMin',_,[_Value]}|T], Fs, Es) -> %% not used
-    field(T, Fs, Es);
-field([{'RangeMax',_,[_Value]}|T], Fs, Es) -> %% not used
     field(T, Fs, Es);
 field([{'Condition',_,[_Value]}|T], Fs, Es) -> %% not used
     field(T, Fs, Es);
@@ -421,7 +427,7 @@ pick_pgn_p(Info, Manufacturers) ->
 
 patch_pgns(PGNs) ->
     [{PGN, patch_manufacturer(
-             patch_info(PGN, Info))} ||
+             patch_ais_sequence_id(PGN, Info))} ||
         {PGN, Info} <- PGNs].
 
 %% For each manufacturer proprietary PGN, add the manufacturerId to Info
@@ -458,13 +464,13 @@ find_manufacturer_code([]) ->
 %% all AIS-related PGNs have new Sequence ID field added.
 %% However, it is only added to three of these PGNs in canboat.
 %% Since it seems that many devices don't send this, we remove it.
-patch_info(129038, Info) ->
+patch_ais_sequence_id(129038, Info) ->
     patch_last(Info);
-patch_info(129809, Info) ->
+patch_ais_sequence_id(129809, Info) ->
     patch_last(Info);
-patch_info(129810, Info) ->
+patch_ais_sequence_id(129810, Info) ->
     patch_last(Info);
-patch_info(_, Info) ->
+patch_ais_sequence_id(_, Info) ->
     Info.
 
 patch_last(Info) ->

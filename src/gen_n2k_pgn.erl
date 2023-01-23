@@ -61,17 +61,21 @@ write_header(Fd, InFile) ->
     io:format(Fd, "-export([type_info/2]).\n", []),
     io:format(Fd, "-export([erlang_module/1]).\n", []),
     io:format(Fd, "\n\n", []),
-    io:format(Fd, "chk_exception1(MaxVal, Val) ->\n", []),
+    io:format(Fd, "chk_exception_bit_field(MaxVal, Val) ->\n", []),
     io:format(Fd, "    if Val == MaxVal ->\n", []),
     io:format(Fd, "            'Unknown';\n", []),
     io:format(Fd, "       true ->\n", []),
     io:format(Fd, "            Val\n", []),
     io:format(Fd, "    end.\n", []),
-    io:format(Fd, "chk_exception2(MaxVal, Val) ->\n", []),
-    io:format(Fd, "    if Val == MaxVal ->\n", []),
+    io:format(Fd, "chk_exception_int(MaxVal, Val) ->\n", []),
+    io:format(Fd, "    if Val < (MaxVal - 2) ->\n", []),
+    io:format(Fd, "            Val;\n", []),
+    io:format(Fd, "       Val == MaxVal ->\n", []),
     io:format(Fd, "            'Unknown';\n", []),
     io:format(Fd, "       Val == (MaxVal - 1) ->\n", []),
-    io:format(Fd, "            'Error';\n", []),
+    io:format(Fd, "            'OutOfRange';\n", []),
+    io:format(Fd, "       Val == (MaxVal - 2) ->\n", []),
+    io:format(Fd, "            'Reserved';\n", []),
     io:format(Fd, "       true ->\n", []),
     io:format(Fd, "            Val\n", []),
     io:format(Fd, "    end.\n", []),
@@ -151,31 +155,31 @@ write_decode0(Fd, []) ->
        <<_0:8,IndustryCode:3/little-unsigned,_2:2,_1:3,Data/bitstring>>)  ->
     <<ManufacturerCode:11/unsigned>> = <<_1:3,_0:8>>,
     {manufacturerProprietaryFastPacketAddressable,
-     [{manufacturerCode,chk_exception2(2047,ManufacturerCode)},
-      {industryCode,chk_exception1(7,IndustryCode)},
+     [{manufacturerCode,chk_exception_bit_field(2047,ManufacturerCode)},
+      {industryCode,chk_exception_bit_field(7,IndustryCode)},
       {data,Data}]};
  decode_unknown(61184,
        <<_0:8,IndustryCode:3/little-unsigned,_2:2,_1:3,Data/bitstring>>)  ->
     <<ManufacturerCode:11/unsigned>> = <<_1:3,_0:8>>,
     {manufacturerProprietarySingleFrameAddressable,
-     [{manufacturerCode,chk_exception2(2047,ManufacturerCode)},
-      {industryCode,chk_exception1(7,IndustryCode)},
+     [{manufacturerCode,chk_exception_bit_field(2047,ManufacturerCode)},
+      {industryCode,chk_exception_bit_field(7,IndustryCode)},
       {data,Data}]};
  decode_unknown(PGN,
        <<_0:8,IndustryCode:3/little-unsigned,_2:2,_1:3,Data/bitstring>>)
   when 65280 =< PGN andalso PGN =< 65535 ->
     <<ManufacturerCode:11/unsigned>> = <<_1:3,_0:8>>,
     {manufacturerProprietarySingleFrameGlobal,
-     [{manufacturerCode,chk_exception2(2047,ManufacturerCode)},
-      {industryCode,chk_exception1(7,IndustryCode)},
+     [{manufacturerCode,chk_exception_bit_field(2047,ManufacturerCode)},
+      {industryCode,chk_exception_bit_field(7,IndustryCode)},
       {data,Data}]};
  decode_unknown(PGN,
        <<_0:8,IndustryCode:3/little-unsigned,_2:2,_1:3,Data/bitstring>>)
   when 130816 =< PGN andalso PGN =< 131071 ->
     <<ManufacturerCode:11/unsigned>> = <<_1:3,_0:8>>,
     {manufacturerProprietaryFastPacketGlobal,
-     [{manufacturerCode,chk_exception2(2047,ManufacturerCode)},
-      {industryCode,chk_exception1(7,IndustryCode)},
+     [{manufacturerCode,chk_exception_bit_field(2047,ManufacturerCode)},
+      {industryCode,chk_exception_bit_field(7,IndustryCode)},
       {data,Data}]};
  decode_unknown(PGN,Data)->{unknown, [{pgn,PGN},{data,Data}]}.\n",
               []).
@@ -626,12 +630,23 @@ format_binding(F,_Last,_) ->
                 string_variable_short ->
                     ["{",ID,",n2k:decode_string_variable(",
                      Var,")}"];
-                Type when Type == int;
-                          Type == float;
-                          Type == enum;
+                Type when Type == enum;
                           Type == enum2;
-                          Type == bits;
-                          Type == undefined ->
+                          Type == bits ->
+                    Length = proplists:get_value(length, F),
+                    RangeMax = proplists:get_value(range_max, F),
+                    MaxVal = (1 bsl Length) - 1,
+                    %% In N2K, MaxVal means "Data not available", but
+                    %% only if MaxVal is available, i.e., no enum/bit has
+                    %% been defined for it.  RangeMax is the highest value
+                    %% used by the defined enums/bits.
+                    if is_integer(RangeMax), RangeMax < MaxVal ->
+                            ["{",ID,",chk_exception_bit_field(",
+                             integer_to_list(MaxVal), ",",Var,")}"];
+                       true ->
+                            ["{",ID,",",Var,"}"]
+                    end;
+                Type when Type == int ->
                     Length = proplists:get_value(length, F),
                     Signed = proplists:get_value(signed, F, false),
                     MaxVal =
@@ -640,16 +655,9 @@ format_binding(F,_Last,_) ->
                            true ->
                                 (1 bsl Length) - 1
                         end,
-                    if Length == 1 ->
-                            ["{",ID,",",Var,"}"];
-                       Length =< 3 ->
-                            ["{",ID,",chk_exception1(",
-                             integer_to_list(MaxVal), ",",Var,")}"];
-                       true ->
-                            ["{",ID,",chk_exception2(",
-                             integer_to_list(MaxVal), ",",Var,")}"]
-                    end;
-                _ ->
+                    ["{",ID,",chk_exception_int(",
+                     integer_to_list(MaxVal), ",",Var,")}"];
+                Type when Type /= undefined ->
                     ["{",ID,",",Var,"}"]
             end;
         Match ->
