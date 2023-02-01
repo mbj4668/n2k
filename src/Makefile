@@ -1,8 +1,8 @@
-VSN = 1.0.0-alpha.0
+VSN = 1.0.0-alpha.1
 
 XTRA_ERL = $(wildcard x_*.erl)
 XTRA_MODULES = $(XTRA_ERL:%.erl=%)
-MODULES = n2k n2k_pgn n2k_raw n2k_csv n2k_can n2k_dat $(XTRA_MODULES)
+MODULES = n2k n2k_pgn n2k_raw n2k_csv n2k_can n2k_dat n2k_script $(XTRA_MODULES)
 
 BEAM = $(MODULES:%=../ebin/%.beam)
 
