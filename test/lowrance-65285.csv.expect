@@ -1,0 +1,11 @@
+16:00:34.206 0   0   0  65285 lowranceTemperature:manufacturerCode = Lowrance; industryCode = Marine; temperatureSource = Sea Temperature; actualTemperature = 20.30 C
+16:00:34.287 0   0   0  65285 lowranceTemperature:manufacturerCode = Lowrance; industryCode = Marine; temperatureSource = Outside Temperature; actualTemperature = 20.30 C
+16:00:34.329 0   0   0  65285 lowranceTemperature:manufacturerCode = Lowrance; industryCode = Marine; temperatureSource = Inside Temperature; actualTemperature = 20.30 C
+16:36:21.165 0   0   0  65285 lowranceTemperature:manufacturerCode = Lowrance; industryCode = Marine; temperatureSource = Engine Room Temperature; actualTemperature = 22.30 C
+16:37:30.297 0   0   0  65285 lowranceTemperature:manufacturerCode = Lowrance; industryCode = Marine; temperatureSource = Engine Room Temperature; actualTemperature = 21.40 C
+16:00:34.367 0   0   0  65285 lowranceTemperature:manufacturerCode = Lowrance; industryCode = Marine; temperatureSource = Main Cabin Temperature; actualTemperature = 20.30 C
+16:00:34.420 0   0   0  65285 lowranceTemperature:manufacturerCode = Lowrance; industryCode = Marine; temperatureSource = Live Well Temperature; actualTemperature = 20.30 C
+16:00:34.474 0   0   0  65285 lowranceTemperature:manufacturerCode = Lowrance; industryCode = Marine; temperatureSource = Bait Well Temperature; actualTemperature = 20.30 C
+16:00:34.572 0   0   0  65285 lowranceTemperature:manufacturerCode = Lowrance; industryCode = Marine; temperatureSource = Refrigeration Temperature; actualTemperature = 20.40 C
+16:00:34.611 0   0   0  65285 lowranceTemperature:manufacturerCode = Lowrance; industryCode = Marine; temperatureSource = Heating System Temperature; actualTemperature = 20.30 C
+16:00:34.646 0   0   0  65285 lowranceTemperature:manufacturerCode = Lowrance; industryCode = Marine; temperatureSource = Unknown; actualTemperature = 20.30 C

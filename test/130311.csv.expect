@@ -1,0 +1,8 @@
+10:16:41.791 5   4 255 130311 environmentalParameters:sid = 36; temperatureSource = Sea Temperature; humiditySource = Unknown; temperature = 17.02 C; humidity = 131.068 %; atmosphericPressure = Unknown
+10:16:41.772 5  36 255 130311 environmentalParameters:sid = 59; temperatureSource = Outside Temperature; humiditySource = Unknown; temperature = 18.50 C; humidity = 131.068 %; atmosphericPressure = 1.022 bar
+10:16:42.169 5  35 255 130311 environmentalParameters:sid = 99; temperatureSource = Sea Temperature; humiditySource = Unknown; temperature = 16.84 C; humidity = 131.068 %; atmosphericPressure = Unknown
+10:16:42.300 5   4 255 130311 environmentalParameters:sid = 36; temperatureSource = Sea Temperature; humiditySource = Unknown; temperature = 17.07 C; humidity = 131.068 %; atmosphericPressure = Unknown
+10:16:42.286 5  36 255 130311 environmentalParameters:sid = 60; temperatureSource = Outside Temperature; humiditySource = Unknown; temperature = 18.50 C; humidity = 131.068 %; atmosphericPressure = 1.022 bar
+10:16:42.699 5  35 255 130311 environmentalParameters:sid = 100; temperatureSource = Sea Temperature; humiditySource = Unknown; temperature = 16.88 C; humidity = 131.068 %; atmosphericPressure = Unknown
+10:16:42.772 5  36 255 130311 environmentalParameters:sid = 61; temperatureSource = Outside Temperature; humiditySource = Unknown; temperature = 18.50 C; humidity = 131.068 %; atmosphericPressure = 1.022 bar
+10:16:42.797 5   4 255 130311 environmentalParameters:sid = 37; temperatureSource = Sea Temperature; humiditySource = Unknown; temperature = 17.14 C; humidity = 131.068 %; atmosphericPressure = Unknown

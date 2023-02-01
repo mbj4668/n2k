@@ -21,3 +21,6 @@ compare:
 		echo "----";						\
 		../bin/n2k -q --infmt csv -f pretty $$f;		\
 	done
+
+clean:
+	rm -f *.diff *.out

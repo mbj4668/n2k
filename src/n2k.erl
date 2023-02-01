@@ -303,6 +303,14 @@ fmt_val(MsgName, Name, Val, Fields) ->
                     fmt_date(Date);
                 s ->
                     fmt_time(Val, Decimals);
+                'K' when Decimals == 2 ->
+                    ValC = Val - 27315,
+                    [io_lib:format("~.*f", [Decimals, ValC*Resolution]),
+                     " C"];
+                'Pa' when Decimals == -2 ->
+                    ValBar = Val / 1000,
+                    [io_lib:format("~.3f", [ValBar]),
+                     " bar"];
                 rad ->
                     io_lib:format("~.1f deg",
                                   [Val*Resolution * 180 / math:pi()]);

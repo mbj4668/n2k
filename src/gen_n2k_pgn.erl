@@ -8,13 +8,14 @@
 %%% TODO:
 %%%  o  handle type bcd (decimal encoded number)
 %%%  o  126208 not handled, see below
-%%%  o  handle repeating fields
 %%%  o  better enum lookup - perhaps dense enums as a tuple
-%%%     and sparse as a assoc list?
+%%%     and sparse as an assoc list?
 
 -module(gen_n2k_pgn).
 
 -export([gen/1]).
+
+-define(getval, proplists:get_value).
 
 gen([PgnsTermFile, ErlFile]) ->
     case file:consult(PgnsTermFile) of
@@ -93,7 +94,7 @@ write_pgn_functions(Fd, Ps) ->
 %% generate the is_fast function
 write_is_fast(Fd, Ps) ->
     FastL0 = [PGN || {PGN, Fs} <- Ps,
-                     fast == proplists:get_value(type, Fs)],
+                     fast == ?getval(type, Fs)],
     %% add the fast manufacturer proprietary addressable PGN; we might have
     %% removed it due to how we were compiled
     FastL = [126720 | FastL0],
@@ -126,7 +127,9 @@ write_is_fast(Fd, Ps) ->
 %% latter case.
 write_decode(Fd, PGNs) ->
     PGNs2 = collect_pgns(PGNs, []),
-    write_decode0(Fd, PGNs2).
+    PGNs3 = filter_pgns(PGNs2),
+    write_decode0(Fd, PGNs3),
+    write_decode_set1(Fd, PGNs3).
 
 collect_pgns([{PGN, Info}, {PGN, _} = H | T], Acc) ->
     collect_pgns([H | T], [Info | Acc]);
@@ -136,13 +139,18 @@ collect_pgns([{PGN, Info} | T], Acc) ->
 collect_pgns([], []) ->
     [].
 
-%% generate the decode function
-%% FIXME! repeating field need extra function to parse tail!
-write_decode0(Fd, [{126208,_Info}|Ps]) ->
+filter_pgns([{126208,_Info} | T]) ->
     %% TODO: In order to properly implement this PGN we would need a
     %% generated table of all PGNs and their fields.  For example
     %% `pgn_field(PGN, FieldNumber)`.
-    write_decode0(Fd, Ps);
+    filter_pgns(T);
+filter_pgns([PGN | T]) ->
+    [PGN | filter_pgns(T)];
+filter_pgns([]) ->
+    [].
+
+
+%% generate the decode function
 write_decode0(Fd, [{PGN,Infos}|Ps]) ->
     write_decode1(Fd, PGN, Infos),
     write_decode0(Fd, Ps);
@@ -196,42 +204,26 @@ write_decode1(Fd, PGN, Infos) ->
     io:format(Fd, "  end;\n", []).
 
 write_decode_info(Fd, Info) ->
-    Fs = proplists:get_value(fields,Info,[]),
-    Repeating = proplists:get_value(repeating_fields,Info,0),
+    Fs = ?getval(fields,Info,[]),
+    {FixedFs, Repeat1, _Repeat2} = split_fields(Fs, Info),
     ID = get_id(Info),
-    {Fixed,Repeat} = lists:split(length(Fs)-Repeating, Fs),
-    {PreDecode, PostDecode} =
-        case proplists:get_value(erlang_module,Info, undefined) of
-            undefined ->
-                {"", ""};
-            Mod ->
-                {[Mod, ":decode("], ")"}
-        end,
     if
-        Fixed  =:= [], Repeat =:= [] ->
-            io:format(Fd, "    <<_/bitstring>> ->\n  {~s,[]};\n",
-                      [ID]);
-        Fixed =:= [] ->
-            {RepeatMatches, RepeatBindings, []} =
-                format_fields(Repeat, Fs, pre),
-            io:format(Fd, "    <<_Repeat/bitstring>> ->\n  ~s{~s, "
-                      "lists:append([ [~s] || <<~s>> <= _Repeat ~s])}~s;\n",
-                      [PreDecode,
-                       ID,
-                       catmap(fun format_binding/3,filter_reserved(Repeat),
-                              undefined, ","),
-                       RepeatMatches,
-                       RepeatBindings,
-                       PostDecode]);
-        Repeat =:= [] ->
+        Repeat1 =:= undefined ->
             {FixedMatches, FixedBindings, FixedGuards} =
-                format_fields(Fixed, Fs, post),
+                format_fields(FixedFs, Fs, post),
             Trail =
-                case proplists:get_value(id, lists:last(Fs)) of
+                case ?getval(id, lists:last(Fs)) of
                     "data" ->
                         "";
                     _ ->
                         ",_/bitstring"
+                end,
+            {PreDecode, PostDecode} =
+                case ?getval(erlang_module,Info, undefined) of
+                    undefined ->
+                        {"", ""};
+                    Mod ->
+                        {[Mod, ":decode("], ")"}
                 end,
             io:format(Fd, "    <<~s"++Trail++">> ~s ->\n"
                           "~s ~s{~s,[~s]}~s;\n",
@@ -242,35 +234,115 @@ write_decode_info(Fd, Info) ->
                        FixedBindings,
                        PreDecode,
                        ID,
-                       catmap(fun format_binding/3, filter_reserved(Fixed),
+                       catmap(fun format_binding/3, filter_reserved(FixedFs),
                               undefined, ","),
                        PostDecode]);
        true ->
             {FixedMatches, FixedBindings, FixedGuards} =
-                format_fields(Fixed, Fs, post),
-            {_RepeatMatches, _RepeatBindings, []} =
-                format_fields(Repeat, Fs, pre),
-            io:format(Fd, "    <<~s,_Repeat/bitstring>> ~s ->\n"
-                      "~s ~s{~s,[~s | "
-%% FIXME - the repeat handling code is not correct
-%                      "lists:append([ [~s] || <<~s>> <= _Repeat ~s])]"
-                      "[]]"
-                      "}~s~s\n",
+                format_fields(FixedFs, Fs, post),
+            {RepeatCountF1, _RepeatFs1} = Repeat1,
+            io:format(Fd, "    <<~s,__REST/bitstring>> ~s ->\n"
+                      "~s decode_~s_set1(~s,__REST,[~s],__DATA);\n",
                       [FixedMatches,
                        if FixedGuards == [] -> "";
                           true -> ["when ", FixedGuards]
                        end,
                        FixedBindings,
-                       PreDecode,
                        ID,
-                       catmap(fun format_binding/3,filter_reserved(Fixed),
-                              undefined, ","),
-%                       catmap(fun format_binding/3,filter_reserved(Repeat),
-%                              undefined, ","),
-%                       RepeatMatches,
-%                       RepeatBindings,
-                       PostDecode,
-                       ";"])
+                       format_binding_var(RepeatCountF1),
+                       catmap(fun format_binding/3,filter_reserved(FixedFs),
+                              undefined, ",")])
+    end.
+
+write_decode_set1(Fd, [{PGN,Infos}|Ps]) ->
+    write_decode_set1(Fd, PGN, Infos),
+    write_decode_set1(Fd, Ps);
+write_decode_set1(_Fd, []) ->
+    ok.
+
+write_decode_set1(Fd, PGN, Infos) ->
+    lists:foreach(
+      fun(Info) ->
+              write_decode_set1_info(Fd, PGN, Info)
+      end, Infos).
+
+write_decode_set1_info(Fd, PGN, Info) ->
+    Fs = ?getval(fields,Info,[]),
+    {_FixedFs, Repeat1, Repeat2} = split_fields(Fs, Info),
+    if
+        Repeat1 =:= undefined ->
+            ok;
+        true ->
+            ID = get_id(Info),
+            {_RepeatCountF, Repeat1Fs} = Repeat1,
+            io:format(Fd, "decode_~s_set1(N,__REST1,Acc,__DATA) "
+                      "when is_integer(N), N > 0 ->\n", [ID]),
+            io:format(Fd, "  case __REST1 of\n", []),
+            write_decode_repeat_set_clause(Fd, ID, Repeat1Fs,
+                                           Repeat2, Info, 1),
+            io:format(Fd, "    _ ->\n      decode_unknown(~w,__DATA)\n", [PGN]),
+            io:format(Fd, "  end;\n", []),
+            if Repeat2 =:= undefined ->
+                    io:format(Fd, "decode_~s_set1(_,_,Acc,_) ->\n"
+                              "    {~s,Acc}.\n\n", [ID,ID]);
+               true ->
+                    %% TODO: set2 isn't properly handled yet.  (currently only
+                    %% used by 126208, which we can't handle anyway).
+                    %% Since 126208 is very dynamic, perhaps we should write
+                    %% a special decode function for that one, when we
+                    %% implement it.
+                    %% If we end up here the resulting file won't compile.
+                    {RepeatCountF2, _} = Repeat1,
+                    io:format(Fd, "decode_~s_set1(_,__REST,Acc,__DATA) ->\n"
+                              "    decode_~s_set2(~s,__REST,Acc,__DATA).\n\n",
+                              [ID,ID,
+                              format_binding_var(RepeatCountF2)])
+            end
+    end.
+
+write_decode_repeat_set_clause(Fd, ID, FixedFs, _, Info, N) ->
+    Fs = ?getval(fields,Info,[]),
+    {FixedMatches, FixedBindings, FixedGuards} =
+        format_fields(FixedFs, Fs, post),
+    io:format(Fd, "    <<~s,__REST2/bitstring>> ~s ->\n"
+              "~s decode_~s_set~w(N-1,__REST2,Acc++[~s],__DATA);\n",
+              [FixedMatches,
+               if FixedGuards == [] -> "";
+                  true -> ["when ", FixedGuards]
+               end,
+               FixedBindings,
+               ID,
+               N,
+               catmap(fun format_binding/3, filter_reserved(FixedFs),
+                      undefined, ",")]).
+
+
+split_fields(Fs, Info) ->
+    case ?getval(repeating_field_set1_count_field, Info) of
+        undefined ->
+            {Fs, undefined, undefined};
+        CF1 ->
+            SF1 = ?getval(repeating_field_set1_start_field, Info),
+            SS1 = ?getval(repeating_field_set1_size, Info),
+            {Fs0, T0} = lists:splitwith(
+                          fun(I) -> ?getval(order, I) < SF1 end,
+                          Fs),
+            F1 = find_field(CF1, Fs),
+            case ?getval(repeating_field_set2_count_field, Info) of
+                undefined ->
+                    {SS1, T0} = {length(T0), T0}, % assertion
+                    {Fs0, {F1, T0}, undefined};
+                CF2 ->
+                    SF2 = ?getval(repeating_field_set2_start_field, Info),
+                    SS2 = ?getval(repeating_field_set2_size, Info),
+                    {Fs1, T1} = lists:splitwith(
+                          fun(I) -> ?getval(order, I) < SF2 end,
+                          T0),
+                    {SS1, Fs1} = {length(Fs1), Fs1}, % assertion
+                    {SS2, T1} = {length(T1), T1}, % assertion
+                    F2 = find_field(CF2, Fs),
+                    {Fs0, {F1, Fs1}, {F2, T1}}
+            end
     end.
 
 
@@ -330,9 +402,9 @@ format_fields(Fs,  AllFs, PreOrPost) ->
 %% Matches :: [ByteMatch :: {Var, NBits}]
 %% FVars :: [{Field, [{Var, NBits}]}]
 field_matches([F | T], CurBit, N, ByteAcc, MatchesAcc, FVarsAcc) ->
-    case proplists:get_value(length, F) of
+    case ?getval(length, F) of
         undefined ->
-            case proplists:get_value(var_length, F) of
+            case ?getval(var_length, F) of
                 true ->
                     VB = {var(N), -1},
                     field_matches(T, CurBit, N+1,
@@ -383,7 +455,7 @@ var(N) ->
     [$_ | integer_to_list(N)].
 
 is_matching_field(F) ->
-    proplists:get_value(match,F) /= undefined.
+    ?getval(match,F) /= undefined.
 
 %% The input lists are reversed.  Find sequences of aligned bytes for
 %% a single field, and replace with direct match of that field.
@@ -471,7 +543,7 @@ member_and_rest(_, []) ->
 %% Skip reserved fields.
 replace_single_var([{F, [{Var, _} | T]} = FVar | Fs],
                    Matches, AllFs, FVarsAcc) ->
-    case proplists:get_value(type, F) of
+    case ?getval(type, F) of
         reserved ->
             replace_single_var(Fs, Matches, AllFs, FVarsAcc);
         _ when T == [] -> % single var
@@ -536,8 +608,8 @@ format_field_variables(FVars, AllFs, PreOrPost) ->
 format_guard_matches(FVars) ->
      catmap(
        fun({F, Vars}, _, _) ->
-               MatchVal = integer_to_list(proplists:get_value(match, F)),
-               Size = integer_to_list(proplists:get_value(length, F)),
+               MatchVal = integer_to_list(?getval(match, F)),
+               Size = integer_to_list(?getval(length, F)),
                ["<<", MatchVal, ":", Size, ">> == <<",
                 catmap(fun({Var, VSz}, _Last, _) ->
                                [Var, ":", integer_to_list(VSz)]
@@ -547,24 +619,24 @@ format_guard_matches(FVars) ->
 
 format_field(F, DirectMatch, AllFs) ->
     {Var, IsMatch} =
-         case proplists:get_value(match,F) of
+         case ?getval(match,F) of
              undefined ->
                  {get_var(F), false};
              Match ->
                  {integer_to_list(Match), true}
          end,
-    Id = proplists:get_value(id, F),
+    Id = ?getval(id, F),
     Size =
-        case proplists:get_value(length, F) of
+        case ?getval(length, F) of
             Len when is_integer(Len) ->
                 integer_to_list(Len);
             undefined ->
-                case proplists:get_value(bit_length_field, F) of
+                case ?getval(bit_length_field, F) of
                     Fn when is_integer(Fn) ->
                         LenF = find_field(Fn, AllFs),
                         get_var(LenF);
                     undefined ->
-                        case proplists:get_value(type, F) of
+                        case ?getval(type, F) of
                             string_variable_short ->
                                 -1;
                             string_variable_medium ->
@@ -572,8 +644,8 @@ format_field(F, DirectMatch, AllFs) ->
                         end
                 end
         end,
-    Signed = proplists:get_value(signed, F, false),
-    Type   = proplists:get_value(type, F, int),
+    Signed = ?getval(signed, F, false),
+    Type   = ?getval(type, F, int),
     Endian = if DirectMatch -> "little-";
                 true -> ""
              end,
@@ -602,7 +674,7 @@ format_field(F, DirectMatch, AllFs) ->
     end.
 
 find_field(N, [F | T]) ->
-    case proplists:get_value(order, F) of
+    case ?getval(order, F) of
         N ->
             F;
         _ ->
@@ -612,62 +684,64 @@ find_field(N, [F | T]) ->
 %% filter reserved field not wanted in result list
 filter_reserved(Fs) ->
     lists:foldr(fun(F,Acc) ->
-                        case proplists:get_value(type,F) of
+                        case ?getval(type,F) of
                             reserved -> Acc;
                             _ -> [F|Acc]
                         end
                 end, [], Fs).
 
 format_binding(F,_Last,_) ->
-    case proplists:get_value(match,F) of
+    ID = get_id(F),
+    ["{", ID, ",", format_binding_var(F),"}"].
+
+format_binding_var(F) ->
+    case ?getval(match,F) of
         undefined ->
-            ID = get_id(F),
             Var = get_var(F),
-            case proplists:get_value(type,F) of
+            case ?getval(type,F) of
                 string_fixed ->
-                    ["{",ID,",n2k:decode_string_fixed(",
-                     Var,")}"];
+                    ["n2k:decode_string_fixed(",
+                     Var,")"];
                 string_variable_short ->
-                    ["{",ID,",n2k:decode_string_variable(",
-                     Var,")}"];
+                    ["n2k:decode_string_variable(",
+                     Var,")"];
                 Type when Type == enum;
                           Type == enum2;
                           Type == bits ->
-                    Length = proplists:get_value(length, F),
-                    RangeMax = proplists:get_value(range_max, F),
+                    Length = ?getval(length, F),
+                    RangeMax = ?getval(range_max, F),
                     MaxVal = (1 bsl Length) - 1,
                     %% In N2K, MaxVal means "Data not available", but
                     %% only if MaxVal is available, i.e., no enum/bit has
                     %% been defined for it.  RangeMax is the highest value
                     %% used by the defined enums/bits.
                     if is_integer(RangeMax), RangeMax < MaxVal ->
-                            ["{",ID,",chk_exception_bit_field(",
-                             integer_to_list(MaxVal), ",",Var,")}"];
+                            ["chk_exception_bit_field(",
+                             integer_to_list(MaxVal), ",",Var,")"];
                        true ->
-                            ["{",ID,",",Var,"}"]
+                            Var
                     end;
                 Type when Type == int ->
-                    Length = proplists:get_value(length, F),
-                    Signed = proplists:get_value(signed, F, false),
+                    Length = ?getval(length, F),
+                    Signed = ?getval(signed, F, false),
                     MaxVal =
                         if Signed ->
                                 (1 bsl (Length-1)) - 1;
                            true ->
                                 (1 bsl Length) - 1
                         end,
-                    ["{",ID,",chk_exception_int(",
-                     integer_to_list(MaxVal), ",",Var,")}"];
+                    ["chk_exception_int(",
+                     integer_to_list(MaxVal), ",",Var,")"];
                 Type when Type /= undefined ->
-                    ["{",ID,",",Var,"}"]
+                    Var
             end;
         Match ->
-            ID = get_id(F),
-            ["{",ID,",",integer_to_list(Match),"}"]
+            integer_to_list(Match)
     end.
 
 %% works for both pgn info and fields
 get_id(F) ->
-    case proplists:get_value(id, F) of
+    case ?getval(id, F) of
         Cs0=[C|_] when C >= $a, C =< $z ->
             maybe_quote(Cs0);
         [C|Cs] when C >= $A, C =< $Z ->
@@ -685,11 +759,11 @@ maybe_quote(String) ->
     end.
 
 get_var(F) ->
-    case proplists:get_value(type, F) of
+    case ?getval(type, F) of
         reserved ->
             "_";
         _ ->
-            varname(proplists:get_value(id, F))
+            varname(?getval(id, F))
     end.
 
 varname(Cs0=[C|Cs]) ->
@@ -705,8 +779,8 @@ write_type_info(Fd, Ps) ->
     write_type_info0(lists:sort(L), Fd).
 
 mk_type_info([{_PGN, Info} | T], Tab) ->
-    PGNId = proplists:get_value(id, Info),
-    Fs = proplists:get_value(fields, Info, []),
+    PGNId = ?getval(id, Info),
+    Fs = ?getval(fields, Info, []),
     mk_type_info_fs(PGNId, Fs, Tab),
     mk_type_info(T, Tab);
 mk_type_info([], _) ->
@@ -735,20 +809,20 @@ mk_type_info_fs(_, [], _) ->
 
 get_type(Info) ->
     case
-        {proplists:get_value(enum, Info),
-         proplists:get_value(enum2, Info),
-         proplists:get_value(bit, Info)}
+        {?getval(enum, Info),
+         ?getval(enum2, Info),
+         ?getval(bit, Info)}
     of
         {undefined, undefined, undefined} ->
-            Unit = list_to_atom(proplists:get_value(unit, Info, "undefined")),
-            Resolution = proplists:get_value(resolution, Info),
+            Unit = list_to_atom(?getval(unit, Info, "undefined")),
+            Resolution = ?getval(resolution, Info),
             Decimals =
                 if Resolution /= undefined ->
-                        round(math:log10(1/Resolution));
+                        ceil(math:log10(1/Resolution));
                    true ->
                         undefined
                 end,
-            case proplists:get_value(type, Info) of
+            case ?getval(type, Info) of
                 float ->
                     {float, Unit};
                 int ->
@@ -768,7 +842,7 @@ get_type(Info) ->
             {enum1, EnumName};
         {undefined, Enum2Name, undefined} ->
             {enum2,
-             list_to_atom(proplists:get_value(enum2_field, Info)),
+             list_to_atom(?getval(enum2_field, Info)),
              Enum2Name};
         {undefined, undefined, BitName} ->
             {bit1, BitName}
@@ -850,11 +924,11 @@ write_erlang_module(Fd, Ps) ->
     io:format(Fd, "erlang_module(_) -> false.\n", []).
 
 write_erlang_module0([{_PGN, Info} | T], Fd) ->
-    case proplists:get_value(erlang_module,Info, undefined) of
+    case ?getval(erlang_module,Info, undefined) of
         undefined ->
             ok;
         Mod ->
-            PGNId = proplists:get_value(id, Info),
+            PGNId = ?getval(id, Info),
             io:format(Fd, "erlang_module(~s) -> {true, ~s};\n", [PGNId, Mod])
     end,
     write_erlang_module0(T, Fd);
@@ -866,6 +940,7 @@ reserved_word("begin") -> true;
 reserved_word("case") -> true;
 reserved_word("try") -> true;
 reserved_word("cond") -> true;
+reserved_word("maybe") -> true;
 reserved_word("catch") -> true;
 reserved_word("andalso") -> true;
 reserved_word("orelse") -> true;

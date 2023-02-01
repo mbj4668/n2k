@@ -82,7 +82,7 @@ load_pgns_xml(Files) ->
                               throw(Error);
                           {Xml,_Rest} ->
                               Node = xmerl_lib:simplify_element(Xml),
-                              pgn_definitions(Node, Acc)
+                              pgn_definitions(File, Node, Acc)
                       end
               end, {[], [], [], []}, Files),
         {ok, Defs}
@@ -91,8 +91,16 @@ load_pgns_xml(Files) ->
             Error
     end.
 
-pgn_definitions({'PGNDefinitions',_As,Cs},
+pgn_definitions(File, {'PGNDefinitions',_As,Cs},
                 {PGNsAcc, Enums1Acc, Enums2Acc, Bits1Acc}) ->
+    case lists:keyfind('SchemaVersion', 1, Cs) of
+        {'SchemaVersion', _, ["2.0.0"]} ->
+            ok;
+        {'SchemaVersion', _, [UnknownVersion]} ->
+            throw(File ++ ": unknown SchemaVersion: " ++ UnknownVersion);
+        false ->
+            throw(File ++ ": expected SchemaVersion element in PGNDefinitions")
+    end,
     {
      case lists:keyfind('PGNs', 1, Cs) of
          false -> PGNsAcc;
