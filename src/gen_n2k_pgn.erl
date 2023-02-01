@@ -157,23 +157,23 @@ write_decode0(Fd, [{PGN,Infos}|Ps]) ->
 write_decode0(Fd, []) ->
     %% Add decode of the fallback PGNs
     io:format(Fd,
-" decode(PGN,Data)-> decode_unknown(PGN,Data).
+"decode(PGN,Data)-> decode_unknown(PGN,Data).
 
- decode_unknown(126720,
+""decode_unknown(126720,
        <<_0:8,IndustryCode:3/little-unsigned,_2:2,_1:3,Data/bitstring>>)  ->
     <<ManufacturerCode:11/unsigned>> = <<_1:3,_0:8>>,
     {manufacturerProprietaryFastPacketAddressable,
      [{manufacturerCode,chk_exception_bit_field(2047,ManufacturerCode)},
       {industryCode,chk_exception_bit_field(7,IndustryCode)},
       {data,Data}]};
- decode_unknown(61184,
+""decode_unknown(61184,
        <<_0:8,IndustryCode:3/little-unsigned,_2:2,_1:3,Data/bitstring>>)  ->
     <<ManufacturerCode:11/unsigned>> = <<_1:3,_0:8>>,
     {manufacturerProprietarySingleFrameAddressable,
      [{manufacturerCode,chk_exception_bit_field(2047,ManufacturerCode)},
       {industryCode,chk_exception_bit_field(7,IndustryCode)},
       {data,Data}]};
- decode_unknown(PGN,
+""decode_unknown(PGN,
        <<_0:8,IndustryCode:3/little-unsigned,_2:2,_1:3,Data/bitstring>>)
   when 65280 =< PGN andalso PGN =< 65535 ->
     <<ManufacturerCode:11/unsigned>> = <<_1:3,_0:8>>,
@@ -181,7 +181,7 @@ write_decode0(Fd, []) ->
      [{manufacturerCode,chk_exception_bit_field(2047,ManufacturerCode)},
       {industryCode,chk_exception_bit_field(7,IndustryCode)},
       {data,Data}]};
- decode_unknown(PGN,
+""decode_unknown(PGN,
        <<_0:8,IndustryCode:3/little-unsigned,_2:2,_1:3,Data/bitstring>>)
   when 130816 =< PGN andalso PGN =< 131071 ->
     <<ManufacturerCode:11/unsigned>> = <<_1:3,_0:8>>,
@@ -189,7 +189,7 @@ write_decode0(Fd, []) ->
      [{manufacturerCode,chk_exception_bit_field(2047,ManufacturerCode)},
       {industryCode,chk_exception_bit_field(7,IndustryCode)},
       {data,Data}]};
- decode_unknown(PGN,Data)->{unknown, [{pgn,PGN},{data,Data}]}.\n",
+""decode_unknown(PGN,Data)->{unknown, [{pgn,PGN},{data,Data}]}.\n",
               []).
 
 
@@ -228,30 +228,24 @@ write_decode_info(Fd, Info) ->
             io:format(Fd, "    <<~s"++Trail++">> ~s ->\n"
                           "~s ~s{~s,[~s]}~s;\n",
                       [FixedMatches,
-                       if FixedGuards == [] -> "";
-                          true -> ["when ", FixedGuards]
-                       end,
+                       FixedGuards,
                        FixedBindings,
                        PreDecode,
                        ID,
-                       catmap(fun format_binding/3, filter_reserved(FixedFs),
-                              undefined, ","),
+                       format_bindings(FixedFs),
                        PostDecode]);
        true ->
             {FixedMatches, FixedBindings, FixedGuards} =
                 format_fields(FixedFs, Fs, post),
-            {RepeatCountF1, _RepeatFs1} = Repeat1,
+            {RepeatCountF1, _RepeatFs1, _} = Repeat1,
             io:format(Fd, "    <<~s,__REST/bitstring>> ~s ->\n"
                       "~s decode_~s_set1(~s,__REST,[~s],__DATA);\n",
                       [FixedMatches,
-                       if FixedGuards == [] -> "";
-                          true -> ["when ", FixedGuards]
-                       end,
+                       FixedGuards,
                        FixedBindings,
                        ID,
                        format_binding_var(RepeatCountF1),
-                       catmap(fun format_binding/3,filter_reserved(FixedFs),
-                              undefined, ",")])
+                       format_bindings(FixedFs)])
     end.
 
 write_decode_set1(Fd, [{PGN,Infos}|Ps]) ->
@@ -274,17 +268,36 @@ write_decode_set1_info(Fd, PGN, Info) ->
             ok;
         true ->
             ID = get_id(Info),
-            {_RepeatCountF, Repeat1Fs} = Repeat1,
+            {_RepeatCountF, Repeat1Fs, Fixed1Fs} = Repeat1,
             io:format(Fd, "decode_~s_set1(N,__REST1,Acc,__DATA) "
                       "when is_integer(N), N > 0 ->\n", [ID]),
             io:format(Fd, "  case __REST1 of\n", []),
-            write_decode_repeat_set_clause(Fd, ID, Repeat1Fs,
-                                           Repeat2, Info, 1),
+            write_decode_repeat_set_clause(Fd, ID, Repeat1Fs, Info, 1),
             io:format(Fd, "    _ ->\n      decode_unknown(~w,__DATA)\n", [PGN]),
             io:format(Fd, "  end;\n", []),
-            if Repeat2 =:= undefined ->
+            if Repeat2 =:= undefined, Fixed1Fs =:= [] ->
                     io:format(Fd, "decode_~s_set1(_,_,Acc,_) ->\n"
                               "    {~s,Acc}.\n\n", [ID,ID]);
+              Repeat2 =:= undefined ->
+                    {Fixed1Matches, Fixed1Bindings, Fixed1Guards} =
+                        format_fields(Fixed1Fs, Fs, post),
+                    io:format(Fd, "decode_~s_set1(_,__REST2,Acc,__DATA) ->\n"
+                              "    case __REST2 of\n"
+                              "       <<~s,_/bitstring>> ~s ->\n"
+                              "         ~s {~s,Acc++[~s]};\n"
+                              "       <<>> ->\n"
+                              "         {~s,Acc};\n"
+                              "       _ ->\n"
+                              "         decode_unknown(~w,__DATA)\n"
+                              "    end.\n\n",
+                              [ID,
+                               Fixed1Matches,
+                               Fixed1Guards,
+                               Fixed1Bindings,
+                               ID,
+                               format_bindings(Fixed1Fs),
+                               ID,
+                               PGN]);
                true ->
                     %% TODO: set2 isn't properly handled yet.  (currently only
                     %% used by 126208, which we can't handle anyway).
@@ -300,21 +313,18 @@ write_decode_set1_info(Fd, PGN, Info) ->
             end
     end.
 
-write_decode_repeat_set_clause(Fd, ID, FixedFs, _, Info, N) ->
+write_decode_repeat_set_clause(Fd, ID, RepeatFs, Info, N) ->
     Fs = ?getval(fields,Info,[]),
-    {FixedMatches, FixedBindings, FixedGuards} =
-        format_fields(FixedFs, Fs, post),
+    {RepeatMatches, RepeatBindings, RepeatGuards} =
+        format_fields(RepeatFs, Fs, post),
     io:format(Fd, "    <<~s,__REST2/bitstring>> ~s ->\n"
               "~s decode_~s_set~w(N-1,__REST2,Acc++[~s],__DATA);\n",
-              [FixedMatches,
-               if FixedGuards == [] -> "";
-                  true -> ["when ", FixedGuards]
-               end,
-               FixedBindings,
+              [RepeatMatches,
+               RepeatGuards,
+               RepeatBindings,
                ID,
                N,
-               catmap(fun format_binding/3, filter_reserved(FixedFs),
-                      undefined, ",")]).
+               format_bindings(RepeatFs)]).
 
 
 split_fields(Fs, Info) ->
@@ -327,21 +337,20 @@ split_fields(Fs, Info) ->
             {Fs0, T0} = lists:splitwith(
                           fun(I) -> ?getval(order, I) < SF1 end,
                           Fs),
+            {Fs1, T1} = lists:split(SS1, T0),
             F1 = find_field(CF1, Fs),
             case ?getval(repeating_field_set2_count_field, Info) of
                 undefined ->
-                    {SS1, T0} = {length(T0), T0}, % assertion
-                    {Fs0, {F1, T0}, undefined};
+                    {Fs0, {F1, Fs1, T1}, undefined};
                 CF2 ->
                     SF2 = ?getval(repeating_field_set2_start_field, Info),
                     SS2 = ?getval(repeating_field_set2_size, Info),
-                    {Fs1, T1} = lists:splitwith(
+                    {Fs1R, T2} = lists:splitwith(
                           fun(I) -> ?getval(order, I) < SF2 end,
-                          T0),
-                    {SS1, Fs1} = {length(Fs1), Fs1}, % assertion
-                    {SS2, T1} = {length(T1), T1}, % assertion
+                          T1),
+                    {Fs2, T3} = lists:split(SS2, T2),
                     F2 = find_field(CF2, Fs),
-                    {Fs0, {F1, Fs1}, {F2, T1}}
+                    {Fs0, {F1, Fs1, Fs1R}, {F2, Fs2, T3}}
             end
     end.
 
@@ -606,16 +615,21 @@ format_field_variables(FVars, AllFs, PreOrPost) ->
     end].
 
 format_guard_matches(FVars) ->
-     catmap(
-       fun({F, Vars}, _, _) ->
-               MatchVal = integer_to_list(?getval(match, F)),
-               Size = integer_to_list(?getval(length, F)),
-               ["<<", MatchVal, ":", Size, ">> == <<",
-                catmap(fun({Var, VSz}, _Last, _) ->
-                               [Var, ":", integer_to_list(VSz)]
-                       end, Vars, [], ","),
-                ">>"]
-       end, FVars, [], ",").
+    Guards =
+        catmap(
+          fun({F, Vars}, _, _) ->
+                  MatchVal = integer_to_list(?getval(match, F)),
+                  Size = integer_to_list(?getval(length, F)),
+                  ["<<", MatchVal, ":", Size, ">> == <<",
+                   catmap(fun({Var, VSz}, _Last, _) ->
+                                  [Var, ":", integer_to_list(VSz)]
+                          end, Vars, [], ","),
+                   ">>"]
+          end, FVars, [], ","),
+    if Guards == [] -> "";
+       true -> ["when ", Guards]
+    end.
+
 
 format_field(F, DirectMatch, AllFs) ->
     {Var, IsMatch} =
@@ -689,6 +703,12 @@ filter_reserved(Fs) ->
                             _ -> [F|Acc]
                         end
                 end, [], Fs).
+
+format_bindings(Fs) ->
+    catmap(fun format_binding/3,
+           filter_reserved(Fs),
+           undefined,
+           ",").
 
 format_binding(F,_Last,_) ->
     ID = get_id(F),
