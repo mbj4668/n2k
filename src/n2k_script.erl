@@ -55,7 +55,7 @@ main(Args) ->
                      fun(Bin) -> io:put_chars(Bin) end}
             end,
         PrettyF =
-            fun(_Message) ->
+            fun(Message) ->
                     Str = n2k:fmt_nmea_message(Message),
                     WriteF(Str)
             end,

@@ -334,9 +334,6 @@ bitpairs([]) ->
     [].
 
 
-
-
-
 enumpairs([{'EnumPair',As,_Ps}|T], ValueTagName) ->
     {_,Name} = lists:keyfind('Name',1,As),
     {_,Value} = lists:keyfind(ValueTagName, 1, As),
@@ -471,19 +468,45 @@ find_manufacturer_code([]) ->
 %% "20130121 nmea 2000 edition 3 00 release document.pdf",
 %% all AIS-related PGNs have new Sequence ID field added.
 %% However, it is only added to three of these PGNs in canboat.
-%% Since it seems that many devices don't send this, we remove it.
-patch_ais_sequence_id(129038, Info) ->
-    patch_last(Info);
-patch_ais_sequence_id(129809, Info) ->
-    patch_last(Info);
-patch_ais_sequence_id(129810, Info) ->
-    patch_last(Info);
-patch_ais_sequence_id(_, Info) ->
-    Info.
+%% Since it seems that many devices don't send it, we handle this
+%% by generating variations (see add_variations() below).
+patch_ais_sequence_id(PGN, Info) ->
+    case is_ais_with_sequence_id(PGN) of
+        true ->
+            patch_last_sequence_id(Info);
+        false ->
+            Info
+    end.
 
-patch_last(Info) ->
+is_ais_with_sequence_id(PGN) ->
+    case PGN of
+        129038 -> true;
+%% In canboat, only three of all AIS PGNs have sequenceId
+%        129039 -> true;
+%        129040 -> true;
+%        129793 -> true;
+%        129794 -> true;
+%        129796 -> true;
+%        129797 -> true;
+%        129798 -> true;
+%        129800 -> true;
+%        129801 -> true;
+%        129802 -> true;
+%        129803 -> true;
+%        129804 -> true;
+%        129805 -> true;
+%        129806 -> true;
+%        129807 -> true;
+        129809 -> true;
+        129810 -> true;
+        _ -> false
+    end.
+
+patch_last_sequence_id(Info) ->
     {fields, Fs0} = lists:keyfind(fields, 1, Info),
     [Last | T] = lists:reverse(Fs0),
+    %% assertion
+    "sequenceId" = proplists:get_value(id, Last),
     Last1 = Last ++ [{new_in, "2.000"}],
     Fs1 = lists:reverse([Last1 | T]),
     lists:keyreplace(fields, 1, Info, {fields, Fs1}).

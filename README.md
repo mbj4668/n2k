@@ -1,4 +1,4 @@
-# NMEA 2000 decoder
+# NMEA 2000 decoder in Erlang
 
 An NMEA 2000 decoder in Erlang.  Decodes the following formats:
 

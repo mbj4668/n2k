@@ -7,3 +7,7 @@ all build clean:
 	      ( cd $$d && $(MAKE) $@ ) || exit 1 ; \
 	    fi ; \
 	  done
+
+.PHONY: test
+test:
+	$(MAKE) -C test
