@@ -10,12 +10,13 @@
 
 -include_lib("xmerl/include/xmerl.hrl").
 
-gen([ManufacturersStr, PgnsTermFile | PgnsXmlFiles]) ->
+gen([ManufacturersStr, PgnErlStr, PgnsTermFile | PgnsXmlFiles]) ->
     try
         Manufacturers = parse_manufacturers(ManufacturersStr),
+        PgnErl = parse_pgn_erl(PgnErlStr),
         case load_pgns_xml(PgnsXmlFiles) of
             {ok, Def0} ->
-                Def1 = process_def(Def0, Manufacturers),
+                Def1 = process_def(Def0, Manufacturers, PgnErl),
                 case save(PgnsTermFile, Def1, PgnsXmlFiles) of
                     ok ->
                         init:stop(0);
@@ -39,6 +40,15 @@ parse_manufacturers("none") ->
     [];
 parse_manufacturers(Str) ->
     [list_to_integer(B) || B <- string:split(Str, ",")].
+
+parse_pgn_erl("none") ->
+    [];
+parse_pgn_erl(Str) ->
+    PairStrL = string:split(Str, ","),
+    lists:map(fun(PairStr) ->
+                      [PGN, Mod] = string:split(PairStr, ":"),
+                      {PGN, Mod}
+              end, PairStrL).
 
 save(File, Def, InFiles) ->
     case file:open(File, [write, {encoding, utf8}]) of
@@ -404,8 +414,8 @@ list_to_number(Value) ->
             list_to_float(Value)
     end.
 
-process_def({PGNs, Enums1, Enums2, Bits1}, Manufacturers) ->
-    NewPGNs0 = patch_pgns(lists:keysort(1, PGNs)),
+process_def({PGNs, Enums1, Enums2, Bits1}, Manufacturers, PgnErl) ->
+    NewPGNs0 = patch_pgns(lists:keysort(1, PGNs), PgnErl),
     NewPGNs1 = filter_pgns(NewPGNs0, Manufacturers),
     NewPGNs2 = expand_pgns(NewPGNs1),
     {NewPGNs2, Enums1, Enums2, Bits1}.
@@ -430,9 +440,11 @@ pick_pgn_p(Info, Manufacturers) ->
             true
     end.
 
-patch_pgns(PGNs) ->
+patch_pgns(PGNs, PgnErl) ->
     [{PGN, patch_manufacturer(
-             patch_ais_sequence_id(PGN, Info))} ||
+             patch_erlang_module(
+               patch_ais_sequence_id(PGN, Info),
+               PgnErl))} ||
         {PGN, Info} <- PGNs].
 
 %% For each manufacturer proprietary PGN, add the manufacturerId to Info
@@ -463,6 +475,15 @@ find_manufacturer_code([F | T]) ->
     end;
 find_manufacturer_code([]) ->
     false.
+
+patch_erlang_module(Info, PgnErl) ->
+    Id = proplists:get_value(id, Info),
+    case lists:keyfind(Id, 1, PgnErl) of
+        {_, ErlMod} ->
+            [{erlang_module, ErlMod} | Info];
+        _ ->
+            Info
+    end.
 
 %% According to "New NMEA 2000 Edition 3.00 Release",
 %% "20130121 nmea 2000 edition 3 00 release document.pdf",

@@ -15,9 +15,6 @@ The functions `n2k_raw:decode_raw/1` and `n2k_csv:decode_csv/1` can be
 used to decode captured packets into NMEA 2000 frames.  The frames can
 be decoded into messages by calling `n2k:decode_nmea/2`.
 
-The NMEA message decoder is orignally based on code from
-https://github.com/tonyrog/nmea_2000.
-
 # Build
 
 ## Handling of PGNs
@@ -54,11 +51,12 @@ type_info(windData,windSpeed) ->
 ## User-defined PGNs
 
 Custom PGNs (or proprietary PGNs that are not part of canboat's
-XML) are defined in the same XML format as canboat uses, with the
-addition of an XML element `ErlangModule`, which is optionally
-placed in the XML element `PGNInfo`.  The given erlang module must
-implement the behavior `n2k_pgn_callback` (see that module for
-details).
+XML) are defined in the same XML format as canboat uses.
+
+For some PGNs, we can't decode with only the canboat.xml definitions,
+but we need additional code to perform the decoding.  If this is the
+case, write an erlang module that implements the behavior
+`n2k_pgn_callback` (see that module for details).
 
 In order to compile the custom PGN definition files, add a file
 `system-config.mk` to the top directory, and define the following
@@ -70,6 +68,18 @@ CUSTOM_DIR = path/to/dir
 
 Place custom PGN definition files and erlang files in this directory.
 The custom PGN definition files must be on the form `*-pgns.xml`.
+
+If some PGN needs an additional erlang module, set `CUSTOM_PGN_ERL`:
+
+```
+CUSTOM_PGN_ERL = <pgnid>:<erlangmodule>(,<pgnid>:<erlangmodule)*
+```
+
+For example:
+
+```
+CUSTOM_PGN_ERL = garminCustomChannel:x_n2k_garmin
+```
 
 ## Control the size of the generated code
 

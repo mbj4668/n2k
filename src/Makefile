@@ -23,6 +23,12 @@ BEAM += $(addsuffix .beam,$(addprefix ../ebin/,$(CUSTOM_MODULES)))
 
 PGNS_XML = canboat.xml $(CUSTOM_PGNS)
 
+ifdef CUSTOM_PGN_ERL
+PGN_ERL = $(CUSTOM_PGN_ERL)
+else
+PGN_ERL = none
+endif
+
 all: $(BEAM) ../ebin/n2k.app
 
 APPSCRIPT = '$$vsn=shift; $$mods=""; while(@ARGV){ \
@@ -45,7 +51,8 @@ n2k_pgn.erl: pgns.term gen_n2k_pgn.beam
 	erl -noshell -run gen_n2k_pgn gen $< $@
 
 pgns.term: gen_pgns_term.beam $(PGNS_XML)
-	erl -noshell -run gen_pgns_term gen $(MANUFACTURER_CODES) $@ $(PGNS_XML)
+	erl -noshell -run gen_pgns_term gen $(MANUFACTURER_CODES) \
+	$(PGN_ERL) $@ $(PGNS_XML)
 
 %.beam: %.erl
 	erlc $<
