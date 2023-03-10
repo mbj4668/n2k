@@ -20,13 +20,9 @@ https://github.com/tonyrog/nmea_2000.
 
 # Build
 
-NOTE: In order to build this code you need to place a copy of `pgns.xml`
-with the pgns you want to be able to decode in `src/`.  E.g., from
-canboat.
-
 ## Handling of PGNs
 
-At build time, `src/pgns.xml` and any user-defined PGNs XML files are
+At build time, `src/canboat.xml` and any user-defined PGNs XML files are
 first compiled into `src/pgns.term` and then
 `src/pgns.term` is compiled to `src/n2k_pgn.erl`, which contains code
 for decoding NMEA 2000 binary messages into Erlang terms.
@@ -58,7 +54,7 @@ type_info(windData,windSpeed) ->
 ## User-defined PGNs
 
 Custom PGNs (or proprietary PGNs that are not part of canboat's
-pgns.xml) are defined in the same XML format as canboat uses, with the
+XML) are defined in the same XML format as canboat uses, with the
 addition of an XML element `ErlangModule`, which is optionally
 placed in the XML element `PGNInfo`.  The given erlang module must
 implement the behavior `n2k_pgn_callback` (see that module for
@@ -66,9 +62,23 @@ details).
 
 In order to compile the custom PGN definition files, add a file
 `system-config.mk` to the top directory, and define the following
-variables:
+variable:
 
 ```
-custom_pgns = path/to/my-pgns.xml path/to/other-pgns.xml
-custom_pgns_src = path/to/my_pgns.erl path/to/other_pgns.erl
+CUSTOM_DIR = path/to/dir
+```
+
+Place custom PGN definition files and erlang files in this directory.
+The custom PGN definition files must be on the form `*-pgns.xml`.
+
+## Control the size of the generated code
+
+By default, all manufacturer proprietary PGNs are compiled into
+`n2k_pgn.erl`.  By setting the variable `MANUFACTURER_CODES` in
+`system-config.mk`, this behaviour can be tweaked.  The variable must
+be on the form `all | none | <integer>,<integer>,...`.  For example,
+to generate code for Airmar and Garmin only:
+
+```
+MANUFACTURER_CODES = 135,229
 ```

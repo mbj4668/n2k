@@ -1,8 +1,6 @@
-VSN = 1.0.0-alpha.1
+VSN = 1.0.0-beta.1
 
-XTRA_ERL = $(wildcard x_*.erl)
-XTRA_MODULES = $(XTRA_ERL:%.erl=%)
-MODULES = n2k n2k_pgn n2k_raw n2k_csv n2k_can n2k_dat n2k_script $(XTRA_MODULES)
+MODULES = n2k n2k_pgn n2k_raw n2k_csv n2k_can n2k_dat n2k_script
 
 BEAM = $(MODULES:%=../ebin/%.beam)
 
@@ -15,8 +13,15 @@ MANUFACTURER_CODES = all
 # Include used-defined extra rules
 -include ../system-config.mk
 
-#PGNS_XML = pgns.xml $(CUSTOM_PGNS)
-PGNS_XML = pgns.xml $(wildcard pgns-*.xml)
+CUSTOM_PGNS = $(wildcard $(CUSTOM_DIR)/*-pgns.xml)
+
+CUSTOM_MODULES = $(basename $(notdir $(wildcard $(CUSTOM_DIR)/*.erl)))
+
+MODULES += $(CUSTOM_MODULES)
+
+BEAM += $(addsuffix .beam,$(addprefix ../ebin/,$(CUSTOM_MODULES)))
+
+PGNS_XML = canboat.xml $(CUSTOM_PGNS)
 
 all: $(BEAM) ../ebin/n2k.app
 
@@ -27,6 +32,9 @@ APPSCRIPT = '$$vsn=shift; $$mods=""; while(@ARGV){ \
 
 # syntax w/ | below means that ../ebin is an order-only-prerequisite, which
 # means the beam isn't rebuilt every time ../bin changes
+../ebin/%.beam: $(CUSTOM_DIR)/%.erl $(BEHAVIOR_BEAMS) | ../ebin
+	erlc -pa . -o ../ebin $<
+
 ../ebin/%.beam: %.erl $(BEHAVIOR_BEAMS) | ../ebin
 	erlc -pa . -o ../ebin $<
 
