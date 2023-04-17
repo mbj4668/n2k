@@ -39,14 +39,14 @@ parse_manufacturers("all") ->
 parse_manufacturers("none") ->
     [];
 parse_manufacturers(Str) ->
-    [list_to_integer(B) || B <- string:split(Str, ",")].
+    [list_to_integer(B) || B <- string:split(Str, ",", all)].
 
 parse_pgn_erl("none") ->
     [];
 parse_pgn_erl(Str) ->
-    PairStrL = string:split(Str, ","),
+    PairStrL = string:split(Str, ",", all),
     lists:map(fun(PairStr) ->
-                      [PGN, Mod] = string:split(PairStr, ":"),
+                      [PGN, Mod] = string:split(PairStr, ":", all),
                       {PGN, Mod}
               end, PairStrL).
 
@@ -394,13 +394,8 @@ field_type("STRING_LAU") ->
 %    %% <ctrl> == 1 -> ascii
 %    string_variable_medium;
 field_type("STRING_LZ") ->
-    %% NOTE: I don't think type is correct in canboat.
     %% NOTE: this is a non-standard string type; used in old fusion PGNs.
-    %% canboat: STRINGLZ
-    %% <len> <char>* 0x00 |
-    %% 0x02 <char>* 0x01 |
-    %% 0x03 0x01 0x00 |
-    %% <len> 0x01 <char>{<len> - 2}
+    %% <len> <char>*
     string_lz.
 
 list_to_number(Value) ->

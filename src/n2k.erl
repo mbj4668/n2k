@@ -5,6 +5,7 @@
 -export([fmt_nmea_message/1, fmt_error/1]).
 -export([encode_canid/1, decode_canid/1]).
 -export([decode_string_fixed/1, decode_string_variable/1]).
+-export([encode_string_variable_short_ascii/1]).
 -export([fmt_ms_time/1, fmt_date/1, fmt_hex/2]).
 -export([encode_nmea_message/2, encode_nmea_fast_message/3]).
 
@@ -183,6 +184,11 @@ decode_string_variable(<<?CTRL_UNICODE,Str/binary>>) ->
     unicode:characters_to_binary(Str, {utf16, little}, utf8);
 decode_string_variable(Bin) ->
     Bin.
+
+encode_string_variable_short_ascii(Str) ->
+    Len = byte_size(Str),
+    <<Len, ?CTRL_ASCII, Str/binary>>.
+
 
 -spec encode_nmea_message(canid(), binary()) ->
           {integer(), binary()}.
