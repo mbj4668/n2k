@@ -108,21 +108,36 @@ main(Args) ->
                      end,
                      n2k:decode_nmea_init()};
                 devices ->
-                    {fun({_Time, {_Pri, 60928 = PGN, Src, _Dst}, Data}, S) ->
-                             case lists:member(Src, S) of
-                                 false ->
-                                     Msg = n2k_pgn:decode(PGN, Data),
-                                     WriteF(fmt_device(Src, Msg)),
-                                     [Src | S];
-                                 true ->
-                                     S
+                    {fun({_, {_, PGN, Src, _}, _} = Frame, {State0, X, Y})
+                           when PGN == 60928 orelse PGN == 126996 ->
+                             case n2k:decode_nmea(Frame, State0) of
+                                 {true, Msg, State1} when PGN == 60928 ->
+                                     case lists:keymember(Src, 1, X) of
+                                         false ->
+                                             {State1, [{Src, Msg} | X], Y};
+                                         true ->
+                                             {State1, X, Y}
+                                     end;
+                                 {true, Msg, State1} when PGN == 126996 ->
+                                     case lists:keymember(Src, 1, Y) of
+                                         false ->
+                                             {State1, X, [{Src, Msg} | Y]};
+                                         true ->
+                                             {State1, X, Y}
+                                     end;
+                                 {false, State1} ->
+                                     {State1, X, Y};
+                                 {error, _, State1} ->
+                                     {State1, X, Y}
                              end;
-%                        ({Time, {_Pri, 126996 = PGN, Src, _Dst}, Data}, S) ->
-%                             S;
+                        (eof, {_, X0, Y0}) ->
+                             X = lists:keysort(1, X0),
+                             Y = lists:keysort(1, Y0),
+                             fmt_devices(WriteF, X, Y);
                         (_, S) ->
                              S
                      end,
-                     []};
+                     {n2k:decode_nmea_init(), [], []}};
                 errors ->
                     {fun(Frame, State0) when element(2, Frame) /= 'service' ->
                              case n2k:decode_nmea(Frame, State0) of
@@ -153,15 +168,22 @@ main(Args) ->
             end,
         {F, FInitState} = mk_filter_fun(A, OutF, OutFInitState),
         try
-            case InFmt of
-                raw ->
-                    n2k_raw:read_raw_file(InFName, F, FInitState);
-                csv ->
-                    n2k_csv:read_csv_file(InFName, F, FInitState);
-                dat ->
-                    n2k_dat:read_dat_file(InFName, F, FInitState);
-                can ->
-                    n2k_can:read_can_file(InFName, F, FInitState)
+            FEndState =
+                case InFmt of
+                    raw ->
+                        n2k_raw:read_raw_file(InFName, F, FInitState);
+                    csv ->
+                        n2k_csv:read_csv_file(InFName, F, FInitState);
+                    dat ->
+                        n2k_dat:read_dat_file(InFName, F, FInitState);
+                    can ->
+                        n2k_can:read_can_file(InFName, F, FInitState)
+                end,
+            case Fmt of
+                devices ->
+                    F(eof, FEndState);
+                _ ->
+                    ok
             end,
             Quiet = maps:get(quiet, A, false),
             if (not Quiet) andalso (Fmt == pretty orelse Fmt == errors) ->
@@ -291,19 +313,88 @@ mk_filter_fun(A, OutF, OutFInitState) ->
              end, OutFInitState}
     end.
 
+-define(ISOADDRESSCLAIM_HEADER, " ~-15s ~-40s").
+-define(PRODUCTINFORMATION_HEADER, " ~-15s ~-15s ~-8s ~-3s").
 
-fmt_device(Src, {_, PGNData}) ->
+fmt_devices(WriteF, LA, LB) ->
+    WriteF("SRC"),
+    WriteF(io_lib:format(?ISOADDRESSCLAIM_HEADER,
+                         ["MANUFACTURER", "FUNCTION"])),
+    if LB /= [] ->
+            WriteF(io_lib:format(
+                     ?PRODUCTINFORMATION_HEADER,
+                     ["MODEL", "SOFTWARE VSN", "NMEA2000", "LEN"]));
+       true ->
+            ok
+    end,
+    WriteF("\n"),
+    WriteF("==="),
+    WriteF(io_lib:format(?ISOADDRESSCLAIM_HEADER,
+                         ["============", "========"])),
+    if LB /= [] ->
+            WriteF(io_lib:format(
+                     ?PRODUCTINFORMATION_HEADER,
+                     ["=====", "============", "========", "==="]));
+       true ->
+            ok
+    end,
+    WriteF("\n"),
+    fmt_devices0(WriteF, LA, LB).
+
+fmt_devices0(WriteF, [{Src, A} | TA], [{Src, B} | TB]) ->
+    WriteF(fmt_src(Src)),
+    WriteF(fmt_isoAddressClaim(A)),
+    WriteF(fmt_productInformation(B)),
+    WriteF("\n"),
+    fmt_devices0(WriteF, TA, TB);
+fmt_devices0(WriteF, [{SrcA, A} | TA], [{SrcB, _} | _] = LB)
+  when SrcA < SrcB ->
+    WriteF(fmt_src(SrcA)),
+    WriteF(fmt_isoAddressClaim(A)),
+    WriteF("\n"),
+    fmt_devices0(WriteF, TA, LB);
+fmt_devices0(WriteF, LA, [{SrcB, B} | TB]) ->
+    WriteF(fmt_src(SrcB)),
+    WriteF(fmt_productInformation(B)),
+    WriteF("\n"),
+    fmt_devices0(WriteF, LA, TB);
+fmt_devices0(WriteF, [{SrcA, A} | TA], []) ->
+    WriteF(fmt_src(SrcA)),
+    WriteF(fmt_isoAddressClaim(A)),
+    WriteF("\n"),
+    fmt_devices0(WriteF, TA, []);
+fmt_devices0(_, [], []) ->
+    ok.
+
+fmt_src(Src) ->
+    io_lib:format("~3w", [Src]).
+
+fmt_isoAddressClaim({_Time, _, {isoAddressClaim, Fields}}) ->
     [_UniqueNumber,
      {manufacturerCode, Code},
      _DeviceInstanceLower,
      _DeviceInstanceUpper,
      {deviceFunction, Function},
-     {deviceClass, Class} | _] = PGNData,
-    io_lib:format("~3w ~s - ~s - ~s\n",
-                  [Src,
-                   get_enum(manufacturerCode, Code),
-                   get_enum(deviceClass, Class),
+     {deviceClass, Class} | _] = Fields,
+    io_lib:format(?ISOADDRESSCLAIM_HEADER,
+                  [get_enum(manufacturerCode, Code),
                    get_enum(deviceFunction, {Class, Function})]).
+
+fmt_productInformation({_Time, _, {productInformation, Fields}}) ->
+    [{nmea2000Version, Nmea2000Version},
+     {productCode, _ProductCode},
+     {modelId, ModelId},
+     {softwareVersionCode, SoftwareVersionCode},
+     {modelVersion, _ModelVersion},
+     {modelSerialCode, _ModelSerialCode},
+     {certificationLevel, _CertificationLevel},
+     {loadEquivalency, LoadEquivalency} | _] = Fields,
+    io_lib:format(?PRODUCTINFORMATION_HEADER,
+                  [ModelId,
+                   SoftwareVersionCode,
+                   io_lib:format("~.3f", [Nmea2000Version*0.001]),
+                   io_lib:format("~w", [LoadEquivalency])]).
+
 
 get_enum(Field, Val) ->
     Enums =

@@ -169,7 +169,8 @@ decode_string_fixed(Bin) ->
             %% remove all fill chars
             %% we assume that Ch isn't used in the middle of the string...
             {match, [{Pos, _End}]} = re:run(Bin, [Ch, $+, $$]),
-            binary:part(Bin, 0, Pos);
+            %% some devices send both these fill chars AND terminating NUL...
+            decode_string_fixed(binary:part(Bin, 0, Pos));
         _ ->
             Bin
     end.
