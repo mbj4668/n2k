@@ -148,7 +148,8 @@ pgn_info([{'Type',_As,[Value]}|T],PGN,Ps) ->
     Type = case Value of
                "Single" -> single;
                "Fast" -> fast;
-               "ISO" -> iso
+               "ISO" -> iso;
+               "Mixed" -> mixed
            end,
     pgn_info(T, PGN, [{type, Type}|Ps]);
 pgn_info([{'Fallback',_As,[Value]}|T],PGN,Ps) ->
