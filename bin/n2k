@@ -6,6 +6,7 @@
 %% to 'csv' or pretty text.
 
 main(Args) ->
+    io:setopts([{encoding, unicode}]),
     ScriptName = script_name(),
     code:add_patha(ebin(ScriptName)),
     n2k_script:main(Args).
