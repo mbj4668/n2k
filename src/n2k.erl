@@ -158,6 +158,8 @@ decode_canid(CanId) ->
     end.
 
 %% string_fixed is N2K type DF63
+decode_string_fixed(<<>>) ->
+    <<>>;
 decode_string_fixed(Bin) ->
     case binary:last(Bin) of
         0 ->
