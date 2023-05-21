@@ -376,9 +376,10 @@ fmt_isoAddressClaim({_Time, _, {isoAddressClaim, Fields}}) ->
      _DeviceInstanceUpper,
      {deviceFunction, Function},
      {deviceClass, Class} | _] = Fields,
-    io_lib:format(?ISOADDRESSCLAIM_HEADER,
-                  [get_enum(manufacturerCode, Code),
-                   get_enum(deviceFunction, {Class, Function})]).
+    io_lib:format(
+      ?ISOADDRESSCLAIM_HEADER,
+      [get_isoAddressClaim_enum(manufacturerCode, Code),
+       get_isoAddressClaim_enum(deviceFunction, {Class, Function})]).
 
 fmt_productInformation({_Time, _, {productInformation, Fields}}) ->
     [{nmea2000Version, Nmea2000Version},
@@ -396,7 +397,7 @@ fmt_productInformation({_Time, _, {productInformation, Fields}}) ->
                    io_lib:format("~w", [LoadEquivalency])]).
 
 
-get_enum(Field, Val) ->
+get_isoAddressClaim_enum(Field, Val) ->
     Enums =
         case n2k_pgn:type_info(isoAddressClaim, Field) of
             {enums, Enums0} ->
@@ -407,8 +408,20 @@ get_enum(Field, Val) ->
     case lists:keyfind(Val, 2, Enums) of
         {Str, _} ->
             Str;
+        _ when is_integer(Val) ->
+            integer_to_list(Val);
         _ ->
-            integer_to_list(Val)
+            {Class, Function} = Val,
+            {enums, ClassEnums} =
+                n2k_pgn:type_info(isoAddressClaim, deviceClass),
+            ClassStr =
+                case lists:keyfind(Class, 2, ClassEnums) of
+                    {Str, _} ->
+                        Str;
+                    _ ->
+                        integer_to_list(Class)
+                end,
+            [ClassStr, $/, integer_to_list(Function)]
     end.
 
 frame_lost(Src, PGN, Order, ETab, Cnts) ->
