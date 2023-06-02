@@ -1,6 +1,6 @@
 VSN = 1.0.0-beta.1
 
-MODULES = n2k n2k_pgn n2k_raw n2k_csv n2k_can n2k_dat n2k_script
+MODULES = n2k n2k_pgn n2k_raw n2k_csv n2k_can n2k_dat n2k_script n2k_devices
 
 BEAM = $(MODULES:%=../ebin/%.beam)
 
