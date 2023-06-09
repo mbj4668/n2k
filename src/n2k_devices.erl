@@ -33,21 +33,33 @@ scan(IpAddress, UdpPort) ->
     %% collect all results, wait 1 second
     IsoAddressClaimL = collect_replies(RS0, 60928, 1000),
     close_rstate(RS0),
-    N2kDeviceAddrL = [Src || {Src, _} <- IsoAddressClaimL],
+    N2kDeviceAddrL = lists:usort([Src || {Src, _} <- IsoAddressClaimL]),
 
     %% for each device, send isoRequest for 126996
     ProductInformationL =
         lists:foldl(
           fun(N2kDeviceAddr, Acc) ->
-                  RS1 = init_rstate(S),
-                  send_nmea_message(S, N2kDeviceAddr, 59904,
-                                    <<126996:24/little-unsigned>>),
-                  X = collect_replies(RS1, 126996, 500),
-                  close_rstate(RS1),
-                  Acc ++ X
+                  Acc ++ n2k_rpc_isoRequest(S, N2kDeviceAddr, 126996)
           end, [], N2kDeviceAddrL),
     WriteF = fun(Bin) -> io:put_chars(Bin) end,
-    fmt_devices(WriteF, IsoAddressClaimL, ProductInformationL).
+    fmt_devices(WriteF, verbose, IsoAddressClaimL, ProductInformationL).
+
+n2k_rpc_isoRequest(S, N2kDeviceAddr, PGN) ->
+    n2k_rpc_isoRequest(5, S, N2kDeviceAddr, PGN).
+
+n2k_rpc_isoRequest(0, _S, _N2kDeviceAddr, _PGN) ->
+    [];
+n2k_rpc_isoRequest(N, S, N2kDeviceAddr, PGN) ->
+    RS1 = init_rstate(S),
+    send_nmea_message(S, N2kDeviceAddr, 59904, <<PGN:24/little-unsigned>>),
+    case collect_reply(RS1, N2kDeviceAddr, PGN, 1000) of
+        [] ->
+            close_rstate(RS1),
+            n2k_rpc_isoRequest(N-1, S, N2kDeviceAddr, PGN);
+        Reply ->
+            close_rstate(RS1),
+            Reply
+    end.
 
 
 send_nmea_message(S, Dst, PGN, Payload) ->
@@ -95,21 +107,33 @@ flush_udp(Sock) ->
            ok
     end.
 
+collect_reply(RS, Src, PGN, Timeout) ->
+    Ref = make_ref(),
+    erlang:send_after(Timeout, self(), {timeout, Ref}),
+    collect_replies_loop(RS, Src, PGN, Ref, one, []).
+
 collect_replies(RS, PGN, Timeout) ->
     Ref = make_ref(),
     erlang:send_after(Timeout, self(), {timeout, Ref}),
-    collect_replies_loop(RS, PGN, Ref, []).
+    collect_replies_loop(RS, any, PGN, Ref, all, []).
 
-collect_replies_loop(RS, PGN, Ref, Acc) ->
+collect_replies_loop(RS, Src, PGN, Ref, How, Acc) ->
     receive
         {timeout, Ref} ->
             Acc;
         {udp, _, _, _, Data} ->
             {RS1, Acc1} = handle_data(Data, RS, PGN, Acc),
-            collect_replies_loop(RS1, PGN, Ref, Acc1);
+            case Acc1 of
+                [{Src, _}] when How == one ->
+                    Acc1;
+                _ when How == one ->
+                    collect_replies_loop(RS1, Src, PGN, Ref, How, Acc);
+                _ ->
+                    collect_replies_loop(RS1, Src, PGN, Ref, How, Acc1)
+            end;
         {udp_passive, Sock} ->
             inet:setopts(Sock, [{active, ?ACTIVE_COUNT}]),
-            Acc
+            collect_replies_loop(RS, Src, PGN, Ref, How, Acc)
     end.
 
 handle_data(<<>>, RS, _PGN, Acc) ->
@@ -173,14 +197,24 @@ handle_raw_line(Line, #rstate{n2k_state = N2kState0} = RS, PGN, Acc0) ->
 
 -define(ISOADDRESSCLAIM_HEADER, " ~-15s ~-40s").
 -define(PRODUCTINFORMATION_HEADER, " ~-15s ~-15s ~-8s ~-3s").
+-define(VERBOSE_PRODUCTINFORMATION_HEADER,
+        " ~-9s ~-15s ~-25s ~-20s ~-15s ~-8s ~-4s ~-3s").
 
-fmt_devices(WriteF, LA0, LB0) ->
+fmt_devices(WriteF, How, LA0, LB0) ->
     LA = lists:ukeysort(1, LA0),
     LB = lists:ukeysort(1, LB0),
     WriteF("SRC"),
     WriteF(io_lib:format(?ISOADDRESSCLAIM_HEADER,
                          ["MANUFACTURER", "FUNCTION"])),
-    if LB /= [] ->
+    if LB /= [], How == verbose ->
+            WriteF(io_lib:format(
+                     ?VERBOSE_PRODUCTINFORMATION_HEADER,
+                     ["PROD CODE",
+                      "MODEL", "MODEL VSN", "MODEL SERIAL",
+                      "SOFTWARE VSN",
+                      "NMEA2000", "CERT",
+                      "LEN"]));
+       LB /= [] ->
             WriteF(io_lib:format(
                      ?PRODUCTINFORMATION_HEADER,
                      ["MODEL", "SOFTWARE VSN", "NMEA2000", "LEN"]));
@@ -191,7 +225,15 @@ fmt_devices(WriteF, LA0, LB0) ->
     WriteF("==="),
     WriteF(io_lib:format(?ISOADDRESSCLAIM_HEADER,
                          ["============", "========"])),
-    if LB /= [] ->
+    if LB /= [], How == verbose ->
+            WriteF(io_lib:format(
+                     ?VERBOSE_PRODUCTINFORMATION_HEADER,
+                     ["=========",
+                      "=====", "=========", "============",
+                      "============",
+                      "========", "====",
+                      "==="]));
+       LB /= [] ->
             WriteF(io_lib:format(
                      ?PRODUCTINFORMATION_HEADER,
                      ["=====", "============", "========", "==="]));
@@ -199,31 +241,31 @@ fmt_devices(WriteF, LA0, LB0) ->
             ok
     end,
     WriteF("\n"),
-    fmt_devices0(WriteF, LA, LB).
+    fmt_devices0(WriteF, How, LA, LB).
 
-fmt_devices0(WriteF, [{Src, A} | TA], [{Src, B} | TB]) ->
+fmt_devices0(WriteF, How, [{Src, A} | TA], [{Src, B} | TB]) ->
     WriteF(fmt_src(Src)),
     WriteF(fmt_isoAddressClaim(A)),
-    WriteF(fmt_productInformation(B)),
+    WriteF(fmt_productInformation(How, B)),
     WriteF("\n"),
-    fmt_devices0(WriteF, TA, TB);
-fmt_devices0(WriteF, [{SrcA, A} | TA], [{SrcB, _} | _] = LB)
+    fmt_devices0(WriteF, How, TA, TB);
+fmt_devices0(WriteF, How, [{SrcA, A} | TA], [{SrcB, _} | _] = LB)
   when SrcA < SrcB ->
     WriteF(fmt_src(SrcA)),
     WriteF(fmt_isoAddressClaim(A)),
     WriteF("\n"),
-    fmt_devices0(WriteF, TA, LB);
-fmt_devices0(WriteF, LA, [{SrcB, B} | TB]) ->
+    fmt_devices0(WriteF, How, TA, LB);
+fmt_devices0(WriteF, How, LA, [{SrcB, B} | TB]) ->
     WriteF(fmt_src(SrcB)),
-    WriteF(fmt_productInformation(B)),
+    WriteF(fmt_productInformation(How, B)),
     WriteF("\n"),
-    fmt_devices0(WriteF, LA, TB);
-fmt_devices0(WriteF, [{SrcA, A} | TA], []) ->
+    fmt_devices0(WriteF, How, LA, TB);
+fmt_devices0(WriteF, How, [{SrcA, A} | TA], []) ->
     WriteF(fmt_src(SrcA)),
     WriteF(fmt_isoAddressClaim(A)),
     WriteF("\n"),
-    fmt_devices0(WriteF, TA, []);
-fmt_devices0(_, [], []) ->
+    fmt_devices0(WriteF, How, TA, []);
+fmt_devices0(_, _, [], []) ->
     ok.
 
 fmt_src(Src) ->
@@ -241,7 +283,7 @@ fmt_isoAddressClaim({_Time, _, {isoAddressClaim, Fields}}) ->
       [get_isoAddressClaim_enum(manufacturerCode, Code),
        get_isoAddressClaim_enum(deviceFunction, {Class, Function})]).
 
-fmt_productInformation({_Time, _, {productInformation, Fields}}) ->
+fmt_productInformation(normal, {_Time, _, {productInformation, Fields}}) ->
     [{nmea2000Version, Nmea2000Version},
      {productCode, _ProductCode},
      {modelId, ModelId},
@@ -254,6 +296,29 @@ fmt_productInformation({_Time, _, {productInformation, Fields}}) ->
                   [ModelId,
                    SoftwareVersionCode,
                    io_lib:format("~.3f", [Nmea2000Version*0.001]),
+                   io_lib:format("~w", [LoadEquivalency])]);
+
+fmt_productInformation(verbose, {_Time, _, {productInformation, Fields}}) ->
+    [{nmea2000Version, Nmea2000Version},
+     {productCode, ProductCode},
+     {modelId, ModelId},
+     {softwareVersionCode, SoftwareVersionCode},
+     {modelVersion, ModelVersion},
+     {modelSerialCode, ModelSerialCode},
+     {certificationLevel, CertificationLevel},
+     {loadEquivalency, LoadEquivalency} | _] = Fields,
+    io_lib:format(?VERBOSE_PRODUCTINFORMATION_HEADER,
+                  [io_lib:format("~w", [ProductCode]),
+                   ModelId,
+                   ModelVersion,
+                   ModelSerialCode,
+                   SoftwareVersionCode,
+                   io_lib:format("~.3f", [Nmea2000Version*0.001]),
+                   if is_integer(CertificationLevel) ->
+                           io_lib:format("~w", [CertificationLevel]);
+                      true ->
+                           "-"
+                   end,
                    io_lib:format("~w", [LoadEquivalency])]).
 
 
