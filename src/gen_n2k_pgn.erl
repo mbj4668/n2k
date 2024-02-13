@@ -210,7 +210,7 @@ write_decode_info(Fd, Info) ->
     if
         Repeat1 =:= undefined ->
             {FixedMatches, FixedBindings, FixedGuards} =
-                format_fields(FixedFs, Fs, post),
+                format_fields(FixedFs, Fs, true),
             Trail =
                 case ?getval(id, lists:last(Fs)) of
                     "data" ->
@@ -236,7 +236,7 @@ write_decode_info(Fd, Info) ->
                        PostDecode]);
        true ->
             {FixedMatches, FixedBindings, FixedGuards} =
-                format_fields(FixedFs, Fs, post),
+                format_fields(FixedFs, Fs, false),
             {RepeatCountF1, _RepeatFs1, _} = Repeat1,
             io:format(Fd, "    <<~s,__REST/bitstring>> ~s ->\n"
                       "~s decode_~s_set1(~s,__REST,[~s],__DATA);\n",
@@ -280,7 +280,7 @@ write_decode_set1_info(Fd, PGN, Info) ->
                               "    {~s,Acc}.\n\n", [ID,ID]);
               Repeat2 =:= undefined ->
                     {Fixed1Matches, Fixed1Bindings, Fixed1Guards} =
-                        format_fields(Fixed1Fs, Fs, post),
+                        format_fields(Fixed1Fs, Fs, false),
                     io:format(Fd, "decode_~s_set1(_,__REST2,Acc,__DATA) ->\n"
                               "    case __REST2 of\n"
                               "       <<~s,_/bitstring>> ~s ->\n"
@@ -305,7 +305,7 @@ write_decode_set1_info(Fd, PGN, Info) ->
                     %% a special decode function for that one, when we
                     %% implement it.
                     %% If we end up here the resulting file won't compile.
-                    {RepeatCountF2, _} = Repeat1,
+                    {RepeatCountF2, _, _} = Repeat1,
                     io:format(Fd, "decode_~s_set1(_,__REST,Acc,__DATA) ->\n"
                               "    decode_~s_set2(~s,__REST,Acc,__DATA).\n\n",
                               [ID,ID,
@@ -316,7 +316,7 @@ write_decode_set1_info(Fd, PGN, Info) ->
 write_decode_repeat_set_clause(Fd, ID, RepeatFs, Info, N) ->
     Fs = ?getval(fields,Info,[]),
     {RepeatMatches, RepeatBindings, RepeatGuards} =
-        format_fields(RepeatFs, Fs, post),
+        format_fields(RepeatFs, Fs, false),
     io:format(Fd, "    <<~s,__REST2/bitstring>> ~s ->\n"
               "~s decode_~s_set~w(N-1,__REST2,Acc++[~s],__DATA);\n",
               [RepeatMatches,
@@ -395,15 +395,20 @@ catmap(Fun, [F|Fs], Arg, Sep) ->
 %% If the PGN spec has a "match" field, we either match on it directly (if
 %% it is a simple field), or create a guard for it.
 
-format_fields(Fs,  AllFs, PreOrPost) ->
+format_fields(Fs,  AllFs, StripTailing) ->
     {Matches0, FVars0} = field_matches(Fs, 0, 0, [], [], []),
     {Matches1, FVars1} = replace_bytes(Matches0, FVars0, AllFs, [], []),
     {Matches2, FVars2} = replace_single_var(FVars1, Matches1, AllFs, []),
-    Matches3 = strip_matches(Matches2, FVars2),
+    Matches3 =
+        if StripTailing ->
+                strip_matches(Matches2, FVars2);
+           true ->
+                Matches2
+        end,
     {FVarsGuards, FVars3} =
         lists:partition(fun({F, _}) -> is_matching_field(F) end, FVars2),
     {format_matches(Matches3),
-     format_field_variables(FVars3, AllFs, PreOrPost),
+     format_field_variables(FVars3, AllFs),
      format_guard_matches(FVarsGuards)}.
 
 %% Loop over each field, handle all bits in one byte at the time.
@@ -570,17 +575,19 @@ replace_single_var([], Matches, _AllFs, FVarsAcc) ->
 %% anyway.
 strip_matches(Matches, FVars) ->
     RMatches = lists:reverse(Matches),
-    strip_matches0(RMatches, FVars).
+    lists:reverse(strip_matches0(RMatches, FVars)).
 
+strip_matches0([{matched, ["_" | _]} | T], FVars) ->
+    strip_matches0(T, FVars);
 strip_matches0([{[$_ | _], _} = Vb | T] = L, FVars) ->
     case is_used(Vb, FVars) of
         false ->
             strip_matches0(T, FVars);
         true ->
-            lists:reverse(L)
+            L
     end;
 strip_matches0(L, _) ->
-    lists:reverse(L).
+    L.
 
 is_used(Vb, FVars) ->
     lists:any(
@@ -597,22 +604,17 @@ format_matches(Matches) ->
                    [Var, ":", NBitsVar]
            end, Matches, [], ",").
 
-format_field_variables([], _, _) ->
+format_field_variables([], _) ->
     "";
-format_field_variables(FVars, AllFs, PreOrPost) ->
-    [if PreOrPost == pre -> ",";
-        true -> ""
-     end,
-     catmap(fun({F, Vars}, _, _) ->
+format_field_variables(FVars, AllFs) ->
+    [catmap(fun({F, Vars}, _, _) ->
                     ["<<", format_field(F, false, AllFs), ">> = <<",
                      catmap(fun({Var, VSz}, _Last, _) ->
                                     [Var, ":", integer_to_list(VSz)]
                             end, Vars, [], ","),
                      ">>"]
             end, FVars, [], ","),
-    if PreOrPost == post -> ",";
-       true -> ""
-    end].
+    ","].
 
 format_guard_matches(FVars) ->
     Guards =

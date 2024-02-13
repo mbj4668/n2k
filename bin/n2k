@@ -9,12 +9,18 @@ main(Args) ->
     io:setopts([{encoding, unicode}]),
     ScriptName = script_name(),
     code:add_patha(ebin(ScriptName)),
+    code:add_patha(deps(ScriptName)),
     n2k_script:main(Args).
 
 ebin(ScriptName) ->
     %% The escript is located in .../n2k/bin
     AppDir = filename:dirname(filename:dirname(ScriptName)),
     filename:join(AppDir, "ebin").
+
+deps(ScriptName) ->
+    %% The escript is located in .../n2k/bin
+    AppDir = filename:dirname(filename:dirname(ScriptName)),
+    filename:join(AppDir, "deps/eclip/ebin").
 
 script_name() ->
     script_name(escript:script_name()).

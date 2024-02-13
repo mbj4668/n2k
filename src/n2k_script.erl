@@ -9,60 +9,85 @@
 -define(CNT_FAST_PACKET_ERRORS, 2).
 -define(CNT_SIZE, 2).
 
-%% Default outformat is 'pretty'
-usage(ExitCode) ->
-    io:format("usage: n2k [-q] [-f csv | pretty | devices | errors]"
-              " [--infmt raw | csv | dat | can]"
-              " [--src SrcId] [--pgn PGN]"
-              " [-o <OutFile>] <InFile>\n"),
-    halt(ExitCode).
-
 main(Args) ->
+    eclip:parse(Args, spec(), #{}).
+
+spec() ->
+    #{help => {doc,
+               [{p, "Convert or pretty print INFILE with NMEA 2000 frames"
+                    " or messages to some other format."},
+                {dl, "Supported input formats are:",
+                 [{"csv", "CANBOAT's PLAIN format"}
+                  , {"raw", "Yacht Devices' RAW format"}
+                  , {"dat", "Yacht Devices' DAT format"}
+                  , {"can", "Yacht Devices' CAN format"}
+                 ]},
+                {p, "By default, the input format is guessed from the input"
+                    " file contents."},
+                {dl, "Supported output formats are:",
+                 [{"pretty", "Human readable"}
+                  , {"csv", "CANBOAT's PLAIN format"}
+                  , {"devices", "Print product and software information"
+                                " about devices found in the input file"}
+                  , {"errors", "Print errors"}]}
+               ]},
+      opts => [#{short => $q, long => "quiet", type => flag},
+               #{short => $F, long => "infmt",
+                 help => "Format of INFILE",
+                 type => {enum, [raw, csv, dat, can]}},
+               #{short => $f, long => "outfmt",
+                 type => {enum, [csv, pretty, devices, errors]},
+                 default => pretty},
+               #{short => $P, long => "pretty-strings", type => flag,
+                 help => "Try to detect strings in binary data"},
+               #{long => "src", metavar => "SrcId", multiple => true,
+                 help => "Only include messages from the given devices"},
+               #{long => "pgn", multiple => true, type => int,
+                 help => "Only include messages with the given pgns"},
+               #{short => $o, name => outfile}],
+      args => [#{name => infname, metavar => "INFILE"}],
+      cb => fun do_convert/10}.
+
+do_convert(Env, _CmdStack, Quiet, InFmt0, OutFmt, PStr,
+           SrcIds, PGNs, OutFName, InFName) ->
     try
-        A = parse_args(Args, #{fmt => pretty}),
-        Fmt = maps:get(fmt, A),
-        InFName =
-            case maps:find(infname, A) of
-                {ok, V} ->
-                    V;
-                error ->
-                    throw(no_infile)
-            end,
         InFmt =
-            case maps:get(infmt, A, undefined) of
+            case InFmt0 of
                 undefined ->
                     case guess_format(InFName) of
                         unknown ->
-                            throw(unknown_format);
-                        dat when Fmt == csv ->
-                            throw({cannot_convert_dat_to_csv});
-                        InFmt0 ->
-                            InFmt0
+                            throw([InFName, ": unknown format"]);
+                        InFmt1 ->
+                            InFmt1
                     end;
-                InFmt0 ->
+                _ ->
                     InFmt0
             end,
+        if InFmt == dat andalso OutFmt == csv ->
+                throw("Cannot convert dat to csv");
+           true ->
+                ok
+        end,
         {CloseF, WriteF} =
-            case maps:find(outfname, A) of
-                {ok, OutFName} ->
+            if OutFName /= undefined ->
                     {ok, OutFd} =
                         file:open(OutFName,
                                   [write, raw, binary, delayed_write]),
                     {fun() -> file:close(OutFd) end,
                      fun(Bin) -> file:write(OutFd, Bin) end};
-                error ->
+               true ->
                     {fun() -> ok end,
                      fun(Bin) -> io:put_chars(Bin) end}
             end,
         PrettyF =
             fun(Message) ->
-                    Str = n2k:fmt_nmea_message(Message),
+                    Str = n2k:fmt_nmea_message(Message, PStr),
                     WriteF(Str)
             end,
         ETab = ets:new(etab, []),
         Cnts = counters:new(?CNT_SIZE, []),
         {OutF, OutFInitState} =
-            case Fmt of
+            case OutFmt of
                 csv ->
                     {fun(Frame, _) when element(2, Frame) /= 'service' ->
                              WriteF(n2k_csv:encode_csv(Frame));
@@ -166,7 +191,7 @@ main(Args) ->
                      end,
                      n2k:decode_nmea_init()}
             end,
-        {F, FInitState} = mk_filter_fun(A, OutF, OutFInitState),
+        {F, FInitState} = mk_filter_fun(SrcIds, PGNs, OutF, OutFInitState),
         try
             FEndState =
                 case InFmt of
@@ -179,14 +204,16 @@ main(Args) ->
                     can ->
                         n2k_can:read_can_file(InFName, F, FInitState)
                 end,
-            case Fmt of
+            case OutFmt of
                 devices ->
-                    F(eof, FEndState);
+                    %% Note: we call OutF directly here, not F.  This is b/c
+                    %% a bug (?) in dialyzer.  And it doesn't matter, since
+                    %% OutF for 'devices' performs its own pgn filtering.
+                    OutF(eof, FEndState);
                 _ ->
                     ok
             end,
-            Quiet = maps:get(quiet, A, false),
-            if (not Quiet) andalso (Fmt == pretty orelse Fmt == errors) ->
+            if (not Quiet) andalso (OutFmt == pretty orelse OutFmt == errors) ->
                     Msgs = counters:get(Cnts, ?CNT_MESSAGES),
                     if Msgs > 0 ->
                             FastPacketErrors =
@@ -205,62 +232,16 @@ main(Args) ->
             CloseF()
         end
     catch
-        throw:help ->
-            usage(0);
         throw:Reason ->
-            io:format("~p\n", [Reason]),
-            usage(1);
+            io:format("** Error: ~s\n\n", [Reason]),
+            eclip:print_help(standard_io, Env),
+            halt(1);
         _:terminated ->
             halt(1);
         _:_Error:_StackTrace ->
             io:format("** ~p\n  ~p\n", [_Error, _StackTrace]),
-            usage(1)
+            halt(1)
     end.
-
-parse_args(["-f", Fmt | T], A) ->
-    case Fmt of
-        "csv" ->
-            parse_args(T, A#{fmt => csv});
-        "pretty" ->
-            parse_args(T, A#{fmt => pretty});
-        "devices" ->
-            parse_args(T, A#{fmt => devices});
-        "errors" ->
-            parse_args(T, A#{fmt => errors});
-        _ ->
-            throw({unknown_format, Fmt})
-    end;
-parse_args(["--infmt", InFmt | T], A) ->
-    case InFmt of
-        "raw" ->
-            parse_args(T, A#{infmt => raw});
-        "csv" ->
-            parse_args(T, A#{infmt => csv});
-        "dat" ->
-            parse_args(T, A#{infmt => dat});
-        "can" ->
-            parse_args(T, A#{infmt => can});
-        _ ->
-            throw({unknown_informat, InFmt})
-    end;
-parse_args(["-o", OutFName | T], A) ->
-    parse_args(T, A#{outfname => OutFName});
-parse_args(["--src", Src | T], A) ->
-    parse_args(T, A#{src => list_to_integer(Src)});
-parse_args(["--pgn", PGN | T], A) ->
-    parse_args(T, A#{pgn => list_to_integer(PGN)});
-parse_args(["-q" | T], A) ->
-    parse_args(T, A#{quiet => true});
-parse_args(["-h" | _], _A) ->
-    throw(help);
-parse_args(["--help" | _], _A) ->
-    throw(help);
-parse_args([InFName], A) ->
-    A#{infname => InFName};
-parse_args([H | _], _A) ->
-    throw({unknown_parameter, H});
-parse_args([], A) ->
-    A.
 
 guess_format(FName) ->
     {ok, Fd} = file:open(FName, [read, raw, binary, read_ahead]),
@@ -295,23 +276,23 @@ guess_format(FName) ->
         file:close(Fd)
     end.
 
-mk_filter_fun(A, OutF, OutFInitState) ->
-    case {maps:get(pgn, A, undefined), maps:get(src, A, undefined)} of
-        {undefined, undefined} ->
-            {OutF, OutFInitState};
-        {ReqPGN, ReqSrc} ->
-            {fun({_Time, {_Pri, PGN, Src, _}, _} = M, OutState) ->
-                     if (ReqPGN == undefined orelse ReqPGN == PGN)
-                        andalso
-                        (ReqSrc == undefined orelse ReqSrc == Src) ->
-                             OutF(M, OutState);
-                        true ->
-                             OutState
-                     end;
-                (M, OutState) ->
-                     OutF(M, OutState)
-             end, OutFInitState}
-    end.
+mk_filter_fun([], [], OutF, OutFInitState) ->
+    {OutF, OutFInitState};
+mk_filter_fun(SrcIds, PGNs, OutF, OutFInitState) ->
+    {fun({_Time, {_Pri, PGN, Src, _}, _} = M, OutState) ->
+             case
+                 (PGNs == [] orelse lists:member(PGN, PGNs))
+                 andalso
+                 (SrcIds == [] orelse lists:member(Src, SrcIds))
+             of
+                 true ->
+                     OutF(M, OutState);
+                 false ->
+                     OutState
+             end;
+        (M, OutState) ->
+             OutF(M, OutState)
+     end, OutFInitState}.
 
 -define(ISOADDRESSCLAIM_HEADER, " ~-15s ~-40s").
 -define(PRODUCTINFORMATION_HEADER, " ~-15s ~-15s ~-8s ~-3s").

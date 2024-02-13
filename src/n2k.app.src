@@ -1,7 +1,0 @@
-{application,n2k,
- [{description,"NMEA 2000 decoder"},
-  {vsn,"%VSN%"},
-  {modules,[%MODULES%]},
-  {registered, []},
-  {env, []},
-  {applications,[kernel,stdlib]}]}.

@@ -2,7 +2,7 @@
 -module(n2k).
 
 -export([decode_nmea_init/0, decode_nmea/2]).
--export([fmt_nmea_message/1, fmt_error/1]).
+-export([fmt_nmea_message/2, fmt_error/1]).
 -export([encode_canid/1, decode_canid/1]).
 -export([decode_string_fixed/1, decode_string_variable/1]).
 -export([encode_string_variable_short_ascii/1]).
@@ -48,7 +48,8 @@
         {pgn_decode_error, Src :: byte(), PGN :: integer()}
         %% a fast packet frame was received but the previous frame was
         %% not found
-      | {frame_loss, Src :: byte(), PGN :: integer(), PrevIndex :: integer()}.
+      | {frame_loss, Src :: byte(), PGN :: integer(),
+                     Order :: integer(), PrevIndex :: integer()}.
 
 -opaque dec_state() :: map().
 
@@ -116,11 +117,11 @@ decode_nmea(Frame, Map0) ->
                             {error, {frame_loss, Src, PGN, Order, PrevIndex},
                              Map0}
                     end
-            end;
-        unknown ->
-            Message = {Time, Id,
-                      {unknown, [{unknown, binary_to_list(Data)}]}},
-            {true, Message, Map0}
+            end
+%        unknown ->
+%            Message = {Time, Id,
+%                      {unknown, [{unknown, binary_to_list(Data)}]}},
+%            {true, Message, Map0}
     end.
 
 -spec fmt_error(dec_error()) -> io_lib:chars().
@@ -230,11 +231,11 @@ mk_fast_frames(Order, Index, Pos, PLen, Payload) ->
     end.
 
 
--spec fmt_nmea_message(message()) -> iodata().
-fmt_nmea_message({Time, {Pri, PGN, Src, Dst}, {MsgName, Fields}}) ->
+-spec fmt_nmea_message(message(), boolean()) -> iodata().
+fmt_nmea_message({Time, {Pri, PGN, Src, Dst}, {MsgName, Fields}}, Pretty) ->
     Fs =
         try
-            [fmt_field(MsgName, F, Fields) || F <- Fields]
+            [fmt_field(MsgName, F, Fields, Pretty) || F <- Fields]
         catch _:_X:S ->
                 io:format("**ERROR: ~p\n~p\n", [_X, S]),
                 [io_lib:format("** FIELDS: ~p", [Fields])]
@@ -296,12 +297,12 @@ fmt_hex(<<X,Bin/binary>>, Separator) ->
 hex(X) ->
     element((X band 15)+1, {$0,$1,$2,$3,$4,$5,$6,$7,$8,$9,$A,$B,$C,$D,$E,$F}).
 
-fmt_field(MsgName, {Name, Val}, Fields) ->
-    [atom_to_list(Name), " = ", fmt_val(MsgName, Name, Val, Fields)].
+fmt_field(MsgName, {Name, Val}, Fields, Pretty) ->
+    [atom_to_list(Name), " = ", fmt_val(MsgName, Name, Val, Fields, Pretty)].
 
-fmt_val(_MsgName, _Name, Val, _Fields) when is_atom(Val) ->
+fmt_val(_MsgName, _Name, Val, _Fields, _) when is_atom(Val) ->
     atom_to_list(Val);
-fmt_val(MsgName, Name, Val, Fields) ->
+fmt_val(MsgName, Name, Val, Fields, Pretty) ->
     case n2k_pgn:type_info(MsgName, Name) of
         {int, Resolution, Decimals, Units} ->
             case Units of
@@ -367,6 +368,8 @@ fmt_val(MsgName, Name, Val, Fields) ->
                     case io_lib:printable_list(ValL) of
                         true ->
                             [$", ValL, $"];
+                        false when Pretty ->
+                            pr(Val);
                         false ->
                             io_lib:format("~999p", [Val])
                     end;
@@ -381,3 +384,28 @@ fmt_units(undefined) ->
     "";
 fmt_units(Units) ->
     [$\s | atom_to_list(Units)].
+
+-define(is_pr(Ch), ((Ch) == 32
+                    orelse ((Ch) >= 48 andalso (Ch) =< 57)
+                    orelse ((Ch) >= 65 andalso (Ch) =< 122))
+       ).
+-define(tr(Ch), if (Ch) == 32 -> $.; true -> Ch end).
+
+pr(<<>>) ->
+    "<<>>";
+pr(Bin) ->
+    ["<<", pr0(Bin), ">>"].
+
+pr0(<<A,B,C,Rest/binary>>) when ?is_pr(A), ?is_pr(B), ?is_pr(C) ->
+    [$",?tr(A),?tr(B),?tr(C) | pr1(Rest)];
+pr0(<<A>>) ->
+    [integer_to_list(A)];
+pr0(<<A,Rest/binary>>) ->
+    [integer_to_list(A), $, | pr0(Rest)].
+
+pr1(<<A>>) when ?is_pr(A) ->
+    [?tr(A), $"];
+pr1(<<A,Rest/binary>>) when ?is_pr(A) ->
+    [?tr(A) | pr1(Rest)];
+pr1(Bin) ->
+    [$", $, | pr0(Bin)].
