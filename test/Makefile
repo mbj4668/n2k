@@ -3,7 +3,7 @@ FILES = $(wildcard *.csv)
 test:
 	@for f in $(FILES); do						\
 		echo "trying $$f..." | tr -d '\012';			\
-		../bin/n2k -q --infmt csv -o $$f.out $$f;		\
+		../bin/n2k convert -q --infmt csv -o $$f.out $$f;	\
 		diff $$f.expect $$f.out > $$f.diff ||			\
 			{ cat $$f.diff; exit 1; };			\
 		rm -f $$f.diff $$f.out;					\
