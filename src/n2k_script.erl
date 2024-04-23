@@ -163,7 +163,7 @@ do_convert(Env, CmdStack, Quiet, InFmt0, OutFmt, PStr,
                                              {State1, X, Y, Z}
                                      end;
                                  {true, Msg, State1} when PGN == 126998 ->
-                                     case lists:keymember(Src, 1, Y) of
+                                     case lists:keymember(Src, 1, Z) of
                                          false ->
                                              {State1, X, Y, [{Src, Msg} | Z]};
                                          true ->
