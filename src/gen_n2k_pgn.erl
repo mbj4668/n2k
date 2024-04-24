@@ -189,7 +189,7 @@ write_decode0(Fd, []) ->
      [{manufacturerCode,chk_exception_bit_field(2047,ManufacturerCode)},
       {industryCode,chk_exception_bit_field(7,IndustryCode)},
       {data,Data}]};
-""decode_unknown(PGN,Data)->{unknown, [{pgn,PGN},{data,Data}]}.\n",
+""decode_unknown(PGN,Data)->{unknown, [{pgn,PGN},{data,Data}]}.\n\n",
               []).
 
 
@@ -244,7 +244,11 @@ write_decode_info(Fd, Info) ->
                        FixedGuards,
                        FixedBindings,
                        ID,
-                       format_binding_var(RepeatCountF1),
+                       if RepeatCountF1 == undefined ->
+                               "-1";
+                          true ->
+                               format_binding_var(RepeatCountF1)
+                       end,
                        format_bindings(FixedFs)])
     end.
 
@@ -270,10 +274,10 @@ write_decode_set1_info(Fd, PGN, Info) ->
             ID = get_id(Info),
             {_RepeatCountF, Repeat1Fs, Fixed1Fs} = Repeat1,
             io:format(Fd, "decode_~s_set1(N,__REST1,Acc,__DATA) "
-                      "when is_integer(N), N > 0 ->\n", [ID]),
+                      "when is_integer(N), N /= 0 ->\n", [ID]),
             io:format(Fd, "  case __REST1 of\n", []),
-            write_decode_repeat_set_clause(Fd, ID, Repeat1Fs, Info, 1),
-            io:format(Fd, "    _ ->\n      decode_unknown(~w,__DATA)\n", [PGN]),
+            write_decode_repeat_set_clauses(Fd, ID, Repeat1Fs, Info, 1),
+            io:format(Fd, "    _ -> {~s,Acc}\n", [ID]),
             io:format(Fd, "  end;\n", []),
             if Repeat2 =:= undefined, Fixed1Fs =:= [] ->
                     io:format(Fd, "decode_~s_set1(_,_,Acc,_) ->\n"
@@ -305,7 +309,7 @@ write_decode_set1_info(Fd, PGN, Info) ->
                     %% a special decode function for that one, when we
                     %% implement it.
                     %% If we end up here the resulting file won't compile.
-                    {RepeatCountF2, _, _} = Repeat1,
+                    {RepeatCountF2, _, _} = Repeat2,
                     io:format(Fd, "decode_~s_set1(_,__REST,Acc,__DATA) ->\n"
                               "    decode_~s_set2(~s,__REST,Acc,__DATA).\n\n",
                               [ID,ID,
@@ -313,7 +317,7 @@ write_decode_set1_info(Fd, PGN, Info) ->
             end
     end.
 
-write_decode_repeat_set_clause(Fd, ID, RepeatFs, Info, N) ->
+write_decode_repeat_set_clauses(Fd, ID, RepeatFs, Info, N) ->
     Fs = ?getval(fields,Info,[]),
     {RepeatMatches, RepeatBindings, RepeatGuards} =
         format_fields(RepeatFs, Fs, false),
@@ -328,17 +332,22 @@ write_decode_repeat_set_clause(Fd, ID, RepeatFs, Info, N) ->
 
 
 split_fields(Fs, Info) ->
-    case ?getval(repeating_field_set1_count_field, Info) of
+    case ?getval(repeating_field_set1_start_field, Info) of
         undefined ->
             {Fs, undefined, undefined};
-        CF1 ->
-            SF1 = ?getval(repeating_field_set1_start_field, Info),
+        SF1 ->
+            F1 =
+                case ?getval(repeating_field_set1_count_field, Info) of
+                    undefined ->
+                        undefined;
+                    CF1 ->
+                        find_field(CF1, Fs)
+                end,
             SS1 = ?getval(repeating_field_set1_size, Info),
             {Fs0, T0} = lists:splitwith(
                           fun(I) -> ?getval(order, I) < SF1 end,
                           Fs),
             {Fs1, T1} = lists:split(SS1, T0),
-            F1 = find_field(CF1, Fs),
             case ?getval(repeating_field_set2_count_field, Info) of
                 undefined ->
                     {Fs0, {F1, Fs1, T1}, undefined};
