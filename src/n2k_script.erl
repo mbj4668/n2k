@@ -107,7 +107,7 @@ do_convert(Env, CmdStack, Quiet, InFmt0, OutFmt, PStr,
                      fun(Bin) -> file:write(OutFd, Bin) end};
                true ->
                     {fun() -> ok end,
-                     fun(Bin) -> io_put_chars(Bin) end}
+                     fun(Bin) -> io:put_chars(Bin) end}
             end,
         PrettyF =
             fun(Message) ->
@@ -278,14 +278,31 @@ do_convert(Env, CmdStack, Quiet, InFmt0, OutFmt, PStr,
         end
     catch
         throw:Reason ->
-            io:format("** Error: ~s\n\n", [Reason]),
+            io:format(standard_error, "** Error: ~s\n\n", [Reason]),
             eclip:print_help(standard_io, Env, CmdStack),
             halt(1);
         _:terminated ->
             halt(1);
-        _:_Error:_StackTrace ->
-            io:format("** ~p\n  ~p\n", [_Error, _StackTrace]),
-            halt(1)
+        _:_Error:StackTrace ->
+            IsEpipe =
+                case StackTrace of
+                    [{_M, _F, _A, Extra} | _] ->
+                        case lists:keysearch(error_info, 1, Extra) of
+                            {value, {_, #{cause := {device, epipe}}}} ->
+                                true;
+                            _ ->
+                                false
+                        end;
+                    _ ->
+                        false
+                end,
+            if not IsEpipe ->
+                    io:format(standard_error, "** ~p\n  ~p\n",
+                              [_Error, StackTrace]),
+                    halt(1);
+               true ->
+                    halt(0)
+            end
     end.
 
 cmd_request() ->
@@ -305,7 +322,7 @@ cmd_request() ->
            cmd_get_devices()]}.
 
 -define(CONNECT_TIMEOUT, 5000).
--define(ACTIVE_COUNT, 10).
+-define(ACTIVE_COUNT, 100).
 
 -record(req, {
           buf = undefined :: 'undefined' | binary()
@@ -468,14 +485,14 @@ dump_raw_line(Line, S) ->
         true->
             case OutFmt of
                 raw ->
-                    io_put_chars([Line, $\n]),
+                    io:put_chars([Line, $\n]),
                     S;
                 pretty ->
                     N2kState2 =
                         case n2k:decode_nmea(Frame, N2kState0) of
                             {true, Message, N2kState1} ->
                                 Str = n2k:fmt_nmea_message(Message, true),
-                                io_put_chars(Str),
+                                io:put_chars(Str),
                                 N2kState1;
                             {false, N2kState1} ->
                                 N2kState1;
@@ -495,39 +512,32 @@ cmd_get_devices() ->
                [{p, "Request isoAddressClaim, productInformation, and "
                     " configInformation messages "
                     " from all devices and print the result."}]},
-      opts => [#{short => $r, long => "repeat",
-                 type => {int, [{1, unbounded}]}, default => 1},
-               #{short => $t, long => "timeout",
-                 type => {int, [{0, unbounded}]}, default => 2000}],
-      cb => fun do_get_devices/4}.
+      opts => [#{short => $t, long => "timeout",
+                 type => {int, [{0, unbounded}]}, default => 4000}],
+      cb => fun do_get_devices/3}.
 
 %% send isoRequest:pgn = 60928 - to 255
-%% send 59904 isoRequest:pgn = 126996 - to 255? or each?
-%% send 59904 isoRequest:pgn = 126996 - to 255? or each?
+%% send 59904 isoRequest:pgn = 126996 - to each device
+%% send 59904 isoRequest:pgn = 126998 - to each device
 
 -record(get_devices, {
           n2k_state = n2k:decode_nmea_init()
+        , st = collect_devices
         , req
+        , devices = []
         , isoAddressClaims = []
         , productInformations = []
         , configInformations = []
         }).
 
-do_get_devices(_Env, CmdStack, Repeat, Timeout) ->
+do_get_devices(_Env, CmdStack, Timeout) ->
     [ReqCmd | _] = CmdStack,
     {ok, R} = init_request(ReqCmd),
     S = #get_devices{req = R},
 
-    spawn_link(
-      fun() ->
-              lists:foreach(
-                fun(_) ->
-                        ok = (R#req.sendf)(R#req.sock, isoRequest(60928)),
-                        ok = (R#req.sendf)(R#req.sock, isoRequest(126996)),
-                        ok = (R#req.sendf)(R#req.sock, isoRequest(126998)),
-                        timer:sleep(200)
-                end, lists:duplicate(Repeat, 1))
-      end),
+    %% Send first request for 60928 to all devices
+    ok = (R#req.sendf)(R#req.sock, isoRequest(60928, 255)),
+    erlang:send_after(500, self(), step1),
 
     %% Set timer to terminate collection of responses
     erlang:send_after(Timeout, self(), stop),
@@ -535,45 +545,99 @@ do_get_devices(_Env, CmdStack, Repeat, Timeout) ->
     %% Collect responses
     loop(R, fun get_devices_raw_line/2, S).
 
-isoRequest(PGN) ->
-    CanId = {_Pri = 7, 59904, _Src = 95, _Dst = 255},
+isoRequest(PGN, Dst) ->
+    CanId = {_Pri = 7, 59904, _Src = 95, Dst},
     Data = <<PGN:24/little-unsigned>>,
     n2k_raw:encode_raw_frame(CanId, Data).
 
+get_devices_raw_line(Line, S0) when is_binary(Line) ->
+    {Frame, _Dir} = n2k_raw:decode_raw(Line),
+    {_Time, {_Pri, PGN, Src, _Dst}, _Data} = Frame,
+    S1 =
+        if S0#get_devices.st == collect_devices ->
+                Devices = S0#get_devices.devices,
+                case lists:member(Src, Devices) of
+                    false ->
+                        S0#get_devices{devices = [Src | Devices]};
+                    true ->
+                        S0
+                end;
+           true ->
+                S0
+        end,
+    if PGN == 60928 orelse PGN == 126996 orelse PGN == 126998 ->
+            case n2k:decode_nmea(Frame, S1#get_devices.n2k_state) of
+                {true, Msg, N2kState1} ->
+                    S2 = S1#get_devices{n2k_state = N2kState1},
+                    if PGN == 60928 ->
+                            L = maybe_add(Src, Msg,
+                                          S1#get_devices.isoAddressClaims),
+                            S2#get_devices{isoAddressClaims = L};
+                       PGN == 126996 ->
+                            L = maybe_add(Src, Msg,
+                                          S1#get_devices.productInformations),
+                            S2#get_devices{productInformations = L};
+                       PGN == 126998 ->
+                            L = maybe_add(Src, Msg,
+                                          S1#get_devices.configInformations),
+                            S2#get_devices{configInformations = L}
+                    end;
+                {false, N2kState1} ->
+                    S1#get_devices{n2k_state = N2kState1};
+                {error, _, N2kState1} ->
+                    S1#get_devices{n2k_state = N2kState1}
+            end;
+       true ->
+            S1
+    end;
+get_devices_raw_line(step1, S) ->
+    %% Send request for 60928 one more time
+    #get_devices{req = R} = S,
+    ok = (R#req.sendf)(R#req.sock, isoRequest(60928, 255)),
+    erlang:send_after(500, self(), step2),
+    S;
+get_devices_raw_line(step2, S) ->
+    %% Now send request for 126966 to each device
+    #get_devices{devices = Devices, req = R} = S,
+    send_iso_request_to_each_device(126996, Devices, R),
+    erlang:send_after(500, self(), step3),
+    S#get_devices{st = get_info};
+get_devices_raw_line(step3, S) ->
+    %% Send request for 126966 to the devices we haven't heard from
+    #get_devices{devices = Devices0, req = R, productInformations = PIs} = S,
+    Devices = Devices0 -- [Src || {Src, _} <- PIs],
+    send_iso_request_to_each_device(126996, Devices, R),
+    erlang:send_after(500, self(), step4),
+    S;
+get_devices_raw_line(step4, S) ->
+    %% Now send request for 126968 to each device
+    #get_devices{devices = Devices, req = R} = S,
+    send_iso_request_to_each_device(126998, Devices, R),
+    erlang:send_after(500, self(), step5),
+    S;
+get_devices_raw_line(step5, S) ->
+    %% Send request for 126968 to the devices we haven't heard from
+    #get_devices{devices = Devices0, req = R, configInformations = CIs} = S,
+    Devices = Devices0 -- [Src || {Src, _} <- CIs],
+    send_iso_request_to_each_device(126998, Devices, R),
+    S;
 get_devices_raw_line(stop, S) ->
     X = lists:keysort(1, S#get_devices.isoAddressClaims),
     Y = lists:keysort(1, S#get_devices.productInformations),
     Z = lists:keysort(1, S#get_devices.configInformations),
-    fmt_devices(fun io_put_chars/1, X, Y, Z),
-    halt(0);
-get_devices_raw_line(Line, S) ->
-    {Frame, _Dir} = n2k_raw:decode_raw(Line),
-    {_Time, {_Pri, PGN, Src, _Dst}, _Data} = Frame,
-    if PGN == 60928 orelse PGN == 126996 orelse PGN == 126998 ->
-            case n2k:decode_nmea(Frame, S#get_devices.n2k_state) of
-                {true, Msg, N2kState1} ->
-                    S1 = S#get_devices{n2k_state = N2kState1},
-                    if PGN == 60928 ->
-                            L = maybe_add(Src, Msg,
-                                          S#get_devices.isoAddressClaims),
-                            S1#get_devices{isoAddressClaims = L};
-                       PGN == 126996 ->
-                            L = maybe_add(Src, Msg,
-                                          S#get_devices.productInformations),
-                            S1#get_devices{productInformations = L};
-                       PGN == 126998 ->
-                            L = maybe_add(Src, Msg,
-                                          S#get_devices.configInformations),
-                            S1#get_devices{configInformations = L}
-                    end;
-                {false, N2kState1} ->
-                    S#get_devices{n2k_state = N2kState1};
-                {error, _, N2kState1} ->
-                    S#get_devices{n2k_state = N2kState1}
-            end;
-       true ->
-            S
-    end.
+    fmt_devices(fun io:put_chars/1, X, Y, Z),
+    halt(0).
+
+send_iso_request_to_each_device(PGN, Devices, R) ->
+    spawn_link(
+      fun() ->
+              lists:foreach(
+                fun(Dst) ->
+                        ok = (R#req.sendf)(R#req.sock, isoRequest(PGN, Dst)),
+                        timer:sleep(2), % is this necessary?
+                        ok
+                end, Devices)
+      end).
 
 maybe_add(Src, Msg, L) ->
     case lists:keymember(Src, 1, L) of
@@ -802,14 +866,6 @@ get_isoAddressClaim_enum(Field, Val) ->
                         integer_to_list(Class)
                 end,
             [ClassStr, $/, integer_to_list(Function)]
-    end.
-
-io_put_chars(Chars) ->
-    try
-        io:put_chars(Chars)
-    catch
-        _:_ ->
-            halt(1)
     end.
 
 frame_lost(Src, PGN, Order, ETab, Cnts) ->
