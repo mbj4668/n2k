@@ -4,6 +4,7 @@
 %%% to 'csv' or pretty text.
 -module(n2k_script).
 -export([main/1]).
+-export([parse_expr/1]).
 
 -define(CNT_MESSAGES, 1).
 -define(CNT_FAST_PACKET_ERRORS, 2).
@@ -38,7 +39,11 @@ cmd_convert() ->
                   , {"csv", "CANBOAT's PLAIN format"}
                   , {"devices", "Print product and software information"
                                 " about devices found in the input file"}
-                  , {"errors", "Print errors"}]}
+                  , {"errors", "Print errors"}]},
+                {p, "The syntax of a match expression is a boolean expression"
+                    " of tests, where each test is 'pgn INT', 'src INT' or"
+                    " 'dst INT'.  For example"},
+                {pre, "  pgn 59904 and (src 81 or dst 81)"}
                ]},
       opts => [#{short => $q, long => "quiet", type => flag},
                #{short => $F, long => "infmt",
@@ -49,17 +54,32 @@ cmd_convert() ->
                  default => pretty},
                #{short => $P, long => "pretty-strings", type => flag,
                  help => "Try to detect strings in binary data"},
-               #{long => "src", metavar => "SrcId", multiple => true,
-                 type => int,
-                 help => "Only include messages from the given devices"},
-               #{long => "pgn", multiple => true, type => int,
-                 help => "Only include messages with the given pgns"},
+               opt_src(),
+               opt_pgn(),
+               opt_match(),
                #{short => $o, name => outfile, type => file}],
       args => [#{name => infname, metavar => "INFILE", type => file}],
-      cb => fun do_convert/10}.
+      cb => fun do_convert/11}.
+
+
+opt_src() ->
+    #{long => "src", metavar => "SrcId", multiple => true,
+      type => int,
+      help => "Only include messages from the given devices"}.
+
+opt_pgn() ->
+    #{long => "pgn", multiple => true, type => int,
+      help => "Only include messages with the given pgns"}.
+
+opt_match() ->
+    #{short => $m, long => "match", metavar => "Expression",
+      type => {custom, fun parse_expr/1},
+      help =>
+          "Only inlcude messages that match the given expression"}.
+
 
 do_convert(Env, CmdStack, Quiet, InFmt0, OutFmt, PStr,
-           SrcIds, PGNs, OutFName, InFName) ->
+           SrcIds, PGNs, Expr, OutFName, InFName) ->
     try
         InFmt =
             case InFmt0 of
@@ -87,7 +107,7 @@ do_convert(Env, CmdStack, Quiet, InFmt0, OutFmt, PStr,
                      fun(Bin) -> file:write(OutFd, Bin) end};
                true ->
                     {fun() -> ok end,
-                     fun(Bin) -> io:put_chars(Bin) end}
+                     fun(Bin) -> io_put_chars(Bin) end}
             end,
         PrettyF =
             fun(Message) ->
@@ -211,7 +231,12 @@ do_convert(Env, CmdStack, Quiet, InFmt0, OutFmt, PStr,
                      end,
                      n2k:decode_nmea_init()}
             end,
-        {F, FInitState} = mk_filter_fun(SrcIds, PGNs, OutF, OutFInitState),
+        {F, FInitState} =
+            if Expr /= undefined ->
+                    mk_expr_filter_fun(Expr, OutF, OutFInitState);
+               true ->
+                    mk_filter_fun(SrcIds, PGNs, OutF, OutFInitState)
+            end,
         try
             FEndState =
                 case InFmt of
@@ -414,50 +439,43 @@ cmd_dump() ->
       help => {doc,
                [{p, "Listen to NMEA 2000 over TCP or UDP and print matching"
                     " frames or messages."}]},
-      opts => [#{long => "src", metavar => "SrcId", multiple => true,
-                 type => int,
-                 help => "Only include messages from the given devices"},
-               #{long => "pgn", multiple => true, type => int,
-                 help => "Only include messages with the given pgns"},
+      opts => [opt_match(),
                #{short => $f, long => "outfmt",
                  type => {enum, [raw, pretty]},
                  default => pretty}],
-      cb => fun do_dump/5}.
+      cb => fun do_dump/4}.
 
 -record(dump, {
           n2k_state = n2k:decode_nmea_init()
         , outfmt
-        , src_ids
-        , pgns
+        , expr
         }).
 
-do_dump(_Env, CmdStack, SrcIds, PGNs, OutFmt) ->
+do_dump(_Env, CmdStack, Expr, OutFmt) ->
     [ReqCmd | _] = CmdStack,
-    S = #dump{outfmt = OutFmt, src_ids = SrcIds, pgns = PGNs},
+    S = #dump{outfmt = OutFmt, expr = Expr},
     {ok, R} = init_request(ReqCmd),
     loop(R, fun dump_raw_line/2, S).
 
 %% Line is unparsed bytes; one line of RAW format.
 dump_raw_line(Line, S) ->
-    #dump{n2k_state = N2kState0, outfmt = OutFmt,
-           src_ids = SrcIds, pgns = PGNs} = S,
+    #dump{n2k_state = N2kState0, outfmt = OutFmt, expr = Expr} = S,
     {Frame, _Dir} = n2k_raw:decode_raw(Line),
-    {_Time, {_Pri, PGN, Src, _Dst}, _Data} = Frame,
+    {_Time, {_Pri, _PGN, _Src, _Dst}, _Data} = Frame,
     case
-        (SrcIds == [] orelse lists:member(Src, SrcIds))
-        andalso (PGNs == [] orelse lists:member(PGN, PGNs))
+        Expr == undefined orelse eval(Expr, Frame)
     of
         true->
             case OutFmt of
                 raw ->
-                    io:put_chars([Line, $\n]),
+                    io_put_chars([Line, $\n]),
                     S;
                 pretty ->
                     N2kState2 =
                         case n2k:decode_nmea(Frame, N2kState0) of
                             {true, Message, N2kState1} ->
                                 Str = n2k:fmt_nmea_message(Message, true),
-                                io:put_chars(Str),
+                                io_put_chars(Str),
                                 N2kState1;
                             {false, N2kState1} ->
                                 N2kState1;
@@ -526,7 +544,7 @@ get_devices_raw_line(stop, S) ->
     X = lists:keysort(1, S#get_devices.isoAddressClaims),
     Y = lists:keysort(1, S#get_devices.productInformations),
     Z = lists:keysort(1, S#get_devices.configInformations),
-    fmt_devices(fun io:put_chars/1, X, Y, Z),
+    fmt_devices(fun io_put_chars/1, X, Y, Z),
     halt(0);
 get_devices_raw_line(Line, S) ->
     {Frame, _Dir} = n2k_raw:decode_raw(Line),
@@ -607,6 +625,18 @@ mk_filter_fun(SrcIds, PGNs, OutF, OutFInitState) ->
                  andalso
                  (SrcIds == [] orelse lists:member(Src, SrcIds))
              of
+                 true ->
+                     OutF(M, OutState);
+                 false ->
+                     OutState
+             end;
+        (M, OutState) ->
+             OutF(M, OutState)
+     end, OutFInitState}.
+
+mk_expr_filter_fun(Expr, OutF, OutFInitState) ->
+    {fun({_Time, {_Pri, _PGN, _Src, _Dst}, _} = M, OutState) ->
+             case eval(Expr, M) of
                  true ->
                      OutF(M, OutState);
                  false ->
@@ -774,6 +804,14 @@ get_isoAddressClaim_enum(Field, Val) ->
             [ClassStr, $/, integer_to_list(Function)]
     end.
 
+io_put_chars(Chars) ->
+    try
+        io:put_chars(Chars)
+    catch
+        _:_ ->
+            halt(1)
+    end.
+
 frame_lost(Src, PGN, Order, ETab, Cnts) ->
     case ets:lookup(ETab, {Src, PGN}) of
         [{_, Order}] ->
@@ -781,4 +819,140 @@ frame_lost(Src, PGN, Order, ETab, Cnts) ->
         _ ->
             counters:add(Cnts, ?CNT_FAST_PACKET_ERRORS, 1),
             ets:insert(ETab, {{Src, PGN}, Order})
+    end.
+
+-type expr() :: {'or', expr(), expr()}
+              | {'and', expr(), expr()}
+              | {'not', expr()}
+              | {'pgn' | 'src' | 'dst', integer()}.
+
+%% expr = "(" expr ")" /
+%%         expr sep boolean-operator sep expr /
+%%         not-keyword sep expr /
+%%         test
+%% test =  pgn-keyword sep integer* /
+%%         src-keyword sep integer* /
+%%         dst-keyword sep integer* /
+%%
+%% Can be rewritten as:
+%%   x = y ("and"/"or" y)*
+%%   y = "not" x /
+%%       "(" x ")"
+%%       test
+%%
+%%   expr    = term "or" expr
+%%   term    = factor "and" term
+%%   factor  = "not" factor /
+%%             "(" expr ")" /
+%%             test
+%%
+%% Recursive descent parser follows.
+
+-spec parse_expr(list()) -> {ok, expr()} | error.
+parse_expr(Str0) ->
+    try
+        {Expr, Str1} = expr(Str0),
+        eof = get_tok(Str1),
+        {ok, Expr}
+    catch
+        _X:_Y:_S ->
+            io:format("~p:~p\n~p", [_X, _Y, _S]),
+            error
+    end.
+
+expr(Str0) ->
+    {TermL, Str1} = term(Str0),
+    case get_tok(Str1) of
+        {'or', Str2} ->
+            {TermR, Str3} = expr(Str2),
+            {{'or', TermL, TermR}, Str3};
+        _ ->
+            {TermL, Str1}
+    end.
+
+term(Str0) ->
+    {FactL, Str1} = factor(Str0),
+    case get_tok(Str1) of
+        {'and', Str2} ->
+            {FactR, Str3} = term(Str2),
+            {{'and', FactL, FactR}, Str3};
+        _ ->
+            {FactL, Str1}
+    end.
+
+factor(Str0) ->
+    case get_tok(Str0) of
+        {'not', Str1} when Str1 /= [] ->
+            {Fact, Str2} = factor(Str1),
+            {{'not', Fact}, Str2};
+        {'(', Str1} ->
+            {Expr, Str2} = expr(Str1),
+            {')', Str3} = get_tok(Str2),
+            {Expr, Str3};
+        {Test, Str1} ->
+            {Test, Str1}
+    end.
+
+
+-define(is_ws(X), (X == $\s orelse X == $\t orelse
+                   X == $\n orelse X == $\r)).
+-define(is_sep(X), (?is_ws(X) orelse (X) == $( orelse (X) == $))).
+-define(is_int(X), ((X >= $0 andalso X =< $9))).
+
+get_tok(S0) ->
+    S1 = skip_ws(S0),
+    case S1 of
+        [$( | S2] ->
+            {'(', S2};
+        [$) | S2] ->
+            {')', S2};
+        "or" ++ [H | T] when ?is_sep(H) ->
+            {'or', [H | T]};
+        "and" ++ [H | T] when ?is_sep(H) ->
+            {'and', [H | T]};
+        "not" ++ [H | T] when ?is_sep(H) ->
+            {'not', [H | T]};
+        "pgn" ++ [H | T] when ?is_sep(H) ->
+            {Int, S2} = get_integer(skip_ws(T)),
+            {{pgn, Int}, S2};
+        "src" ++ [H | T] when ?is_sep(H) ->
+            {Int, S2} = get_integer(skip_ws(T)),
+            {{src, Int}, S2};
+        "dst" ++ [H | T] when ?is_sep(H) ->
+            {Int, S2} = get_integer(skip_ws(T)),
+            {{dst, Int}, S2};
+        [] ->
+            'eof'
+    end.
+
+skip_ws([H | T]) when ?is_ws(H) ->
+    skip_ws(T);
+skip_ws(S) ->
+    S.
+
+get_integer([H | T]) when ?is_int(H) ->
+    get_integer(T, [H]).
+
+get_integer([H | T], Acc) when ?is_int(H) ->
+    get_integer(T, [H | Acc]);
+get_integer(T, Acc) ->
+    {list_to_integer(lists:reverse(Acc)), T}.
+
+-spec eval(expr(), n2k:frame()) -> boolean().
+eval(Expr, Frame) ->
+    case Expr of
+        {'or', ExprL, ExprR} ->
+            eval(ExprL, Frame) orelse eval(ExprR, Frame);
+        {'and', ExprL, ExprR} ->
+            eval(ExprL, Frame) andalso eval(ExprR, Frame);
+        {'not', ExprR} ->
+            not(eval(ExprR, Frame));
+        Test ->
+            {_Time, {_Pri, PGN, Src, Dst}, _} = Frame,
+            case Test of
+                {pgn, PGN} -> true;
+                {src, Src} -> true;
+                {dst, Dst} -> true;
+                _ -> false
+            end
     end.
