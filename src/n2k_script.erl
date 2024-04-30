@@ -322,7 +322,8 @@ cmd_request() ->
            cmd_get_devices()]}.
 
 -define(CONNECT_TIMEOUT, 5000).
--define(ACTIVE_COUNT, 100).
+%-define(ACTIVE_COUNT, 100).
+-define(ACTIVE_COUNT, true).
 
 -record(req, {
           buf = undefined :: 'undefined' | binary()
@@ -513,7 +514,7 @@ cmd_get_devices() ->
                     " configInformation messages "
                     " from all devices and print the result."}]},
       opts => [#{short => $t, long => "timeout",
-                 type => {int, [{0, unbounded}]}, default => 4000}],
+                 type => {int, [{0, unbounded}]}, default => 8000}],
       cb => fun do_get_devices/3}.
 
 %% send isoRequest:pgn = 60928 - to 255
@@ -537,7 +538,7 @@ do_get_devices(_Env, CmdStack, Timeout) ->
 
     %% Send first request for 60928 to all devices
     ok = (R#req.sendf)(R#req.sock, isoRequest(60928, 255)),
-    erlang:send_after(500, self(), step1),
+    erlang:send_after(1000, self(), step1),
 
     %% Set timer to terminate collection of responses
     erlang:send_after(Timeout, self(), stop),
@@ -546,7 +547,7 @@ do_get_devices(_Env, CmdStack, Timeout) ->
     loop(R, fun get_devices_raw_line/2, S).
 
 isoRequest(PGN, Dst) ->
-    CanId = {_Pri = 7, 59904, _Src = 95, Dst},
+    CanId = {_Pri = 4, 59904, _Src = 95, Dst},
     Data = <<PGN:24/little-unsigned>>,
     n2k_raw:encode_raw_frame(CanId, Data).
 
@@ -594,26 +595,28 @@ get_devices_raw_line(step1, S) ->
     %% Send request for 60928 one more time
     #get_devices{req = R} = S,
     ok = (R#req.sendf)(R#req.sock, isoRequest(60928, 255)),
-    erlang:send_after(500, self(), step2),
+    timer:sleep(100),
+    ok = (R#req.sendf)(R#req.sock, isoRequest(60928, 255)),
+    erlang:send_after(1000, self(), step2),
     S;
 get_devices_raw_line(step2, S) ->
     %% Now send request for 126966 to each device
     #get_devices{devices = Devices, req = R} = S,
     send_iso_request_to_each_device(126996, Devices, R),
-    erlang:send_after(500, self(), step3),
+    erlang:send_after(1000, self(), step3),
     S#get_devices{st = get_info};
 get_devices_raw_line(step3, S) ->
     %% Send request for 126966 to the devices we haven't heard from
     #get_devices{devices = Devices0, req = R, productInformations = PIs} = S,
     Devices = Devices0 -- [Src || {Src, _} <- PIs],
     send_iso_request_to_each_device(126996, Devices, R),
-    erlang:send_after(500, self(), step4),
+    erlang:send_after(1000, self(), step4),
     S;
 get_devices_raw_line(step4, S) ->
     %% Now send request for 126968 to each device
     #get_devices{devices = Devices, req = R} = S,
     send_iso_request_to_each_device(126998, Devices, R),
-    erlang:send_after(500, self(), step5),
+    erlang:send_after(1000, self(), step5),
     S;
 get_devices_raw_line(step5, S) ->
     %% Send request for 126968 to the devices we haven't heard from
@@ -634,7 +637,9 @@ send_iso_request_to_each_device(PGN, Devices, R) ->
               lists:foreach(
                 fun(Dst) ->
                         ok = (R#req.sendf)(R#req.sock, isoRequest(PGN, Dst)),
-                        timer:sleep(2), % is this necessary?
+                        timer:sleep(20), % is this necessary?
+                        ok = (R#req.sendf)(R#req.sock, isoRequest(PGN, Dst)),
+                        timer:sleep(20), % is this necessary?
                         ok
                 end, Devices)
       end).
