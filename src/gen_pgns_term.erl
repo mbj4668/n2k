@@ -248,6 +248,11 @@ field([{'Signed',_,[Value]}|T], Fs, Es) ->
         false -> field(T, Fs, Es);
         true  -> field(T, [{signed,true}|Fs], Es)
     end;
+field([{'Endian',_,[Value]}|T], Fs, Es) ->
+    case Value of
+        "little" -> field(T, [{endian,little}|Fs], Es);
+        "big" -> field(T, [{endian,big}|Fs], Es)
+    end;
 field([{'EnumValues',_,Pairs}|T], Fs, Es) ->
     field(T, [{enums, enumpairs(Pairs, 'Value')}|Fs], Es);
 field([{'EnumBitValues',_,Pairs}|T], Fs, Es) ->

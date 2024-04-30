@@ -671,7 +671,9 @@ format_field(F, DirectMatch, AllFs) ->
         end,
     Signed = ?getval(signed, F, false),
     Type   = ?getval(type, F, int),
-    Endian = if DirectMatch -> "little-";
+    Endian0 = ?getval(endian, F, default),
+    Endian = if Endian0 == big -> "";
+                DirectMatch -> "little-";
                 true -> ""
              end,
     BitType = case Type of
