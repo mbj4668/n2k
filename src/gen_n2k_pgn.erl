@@ -7,7 +7,7 @@
 %%%
 %%% TODO:
 %%%  o  handle type bcd (decimal encoded number)
-%%%  o  126208 not handled, see below
+%%%  o  all variants of 126208 not handled
 %%%  o  better enum lookup - perhaps dense enums as a tuple
 %%%     and sparse as an assoc list?
 
@@ -157,23 +157,54 @@ write_decode0(Fd, [{PGN,Infos}|Ps]) ->
 write_decode0(Fd, []) ->
     %% Add decode of the fallback PGNs
     io:format(Fd,
-"decode(PGN,Data)-> decode_unknown(PGN,Data).
+"decode(126208, __DATA) ->
+    case __DATA of
+        <<0,PGN:24/little-unsigned,TransmissionInterval:32,
+          TransmissionIntervalOffset:16,NumberOfParameters:8,Rest/binary>> ->
+            {nmeaRequestGroupFunction,
+             [{functionCode, 0},
+              {pgn, PGN},
+              {transmissionInterval, TransmissionInterval},
+              {transmissionIntervalOffset, TransmissionIntervalOffset},
+              {numberOfParameters, NumberOfParameters},
+              {data, Rest}]};
+        <<1,PGN:24/little-unsigned,Priority:4,_:4,
+          NumberOfParameters:8,Rest/binary>> ->
+            {nmeaCommandGroupFunction,
+             [{functionCode, 1},
+              {pgn, PGN},
+              {priority, chk_exception_bit_field(9,Priority)},
+              {numberOfParameters, NumberOfParameters},
+              {data, Rest}]};
+        <<2,PGN:24/little-unsigned,PGNErrorCode:4,
+          TransmissionErrorCode:4,NumberOfParameters:8,Rest/binary>> ->
+            {nmeaAcknowledgeGroupFunction,
+             [{functionCode, 2},
+              {pgn, PGN},
+              {pgnErrorCode, PGNErrorCode},
+              {transmissionIntervalPriorityErrorCode, TransmissionErrorCode},
+              {numberOfParameters, NumberOfParameters},
+              {data, Rest}]};
+        _ ->
+            decode_unknown(126208,__DATA)
+    end;
+" "decode(PGN,Data)-> decode_unknown(PGN,Data).
 
-""decode_unknown(126720,
+" "decode_unknown(126720,
        <<_0:8,IndustryCode:3/little-unsigned,_2:2,_1:3,Data/bitstring>>)  ->
     <<ManufacturerCode:11/unsigned>> = <<_1:3,_0:8>>,
     {manufacturerProprietaryFastPacketAddressable,
      [{manufacturerCode,chk_exception_bit_field(2047,ManufacturerCode)},
       {industryCode,chk_exception_bit_field(7,IndustryCode)},
       {data,Data}]};
-""decode_unknown(61184,
+" "decode_unknown(61184,
        <<_0:8,IndustryCode:3/little-unsigned,_2:2,_1:3,Data/bitstring>>)  ->
     <<ManufacturerCode:11/unsigned>> = <<_1:3,_0:8>>,
     {manufacturerProprietarySingleFrameAddressable,
      [{manufacturerCode,chk_exception_bit_field(2047,ManufacturerCode)},
       {industryCode,chk_exception_bit_field(7,IndustryCode)},
       {data,Data}]};
-""decode_unknown(PGN,
+" "decode_unknown(PGN,
        <<_0:8,IndustryCode:3/little-unsigned,_2:2,_1:3,Data/bitstring>>)
   when 65280 =< PGN andalso PGN =< 65535 ->
     <<ManufacturerCode:11/unsigned>> = <<_1:3,_0:8>>,
@@ -181,7 +212,7 @@ write_decode0(Fd, []) ->
      [{manufacturerCode,chk_exception_bit_field(2047,ManufacturerCode)},
       {industryCode,chk_exception_bit_field(7,IndustryCode)},
       {data,Data}]};
-""decode_unknown(PGN,
+" "decode_unknown(PGN,
        <<_0:8,IndustryCode:3/little-unsigned,_2:2,_1:3,Data/bitstring>>)
   when 130816 =< PGN andalso PGN =< 131071 ->
     <<ManufacturerCode:11/unsigned>> = <<_1:3,_0:8>>,
@@ -189,7 +220,7 @@ write_decode0(Fd, []) ->
      [{manufacturerCode,chk_exception_bit_field(2047,ManufacturerCode)},
       {industryCode,chk_exception_bit_field(7,IndustryCode)},
       {data,Data}]};
-""decode_unknown(PGN,Data)->{unknown, [{pgn,PGN},{data,Data}]}.\n\n",
+" "decode_unknown(PGN,Data)->{unknown, [{pgn,PGN},{data,Data}]}.\n\n",
               []).
 
 
@@ -304,10 +335,7 @@ write_decode_set1_info(Fd, PGN, Info) ->
                                PGN]);
                true ->
                     %% TODO: set2 isn't properly handled yet.  (currently only
-                    %% used by 126208, which we can't handle anyway).
-                    %% Since 126208 is very dynamic, perhaps we should write
-                    %% a special decode function for that one, when we
-                    %% implement it.
+                    %% used by 126208, which we don't handle properly anyway.)
                     %% If we end up here the resulting file won't compile.
                     {RepeatCountF2, _, _} = Repeat2,
                     io:format(Fd, "decode_~s_set1(_,__REST,Acc,__DATA) ->\n"
