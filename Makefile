@@ -23,9 +23,10 @@ BEHAVIOR_BEAMS = ebin/n2k_pgn_callback.beam
 
 # Set erl.mk-defined variables
 
-DEPS = eclip
+DEPS = eclip mtab
 
-dep_eclip = git https://github.com/mbj4668/eclip.git 2.0.0
+dep_eclip = git https://github.com/mbj4668/eclip.git 2.0.2
+dep_mtab = git https://github.com/mbj4668/mtab.git
 
 ERL_MODULES = n2k_pgn $(CUSTOM_MODULES)
 EXCLUDE_ERL_MODULES = gen_n2k_pgn gen_pgns_term n2k_pgn_callback
