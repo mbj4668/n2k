@@ -340,138 +340,6 @@ default_gw_address() ->
             AddressStr
     end.
 
--define(CONNECT_TIMEOUT, 5000).
-%-define(ACTIVE_COUNT, 100).
--define(ACTIVE_COUNT, true).
-
--record(req, {
-          buf = undefined :: 'undefined' | binary()
-        , gw
-        , connectf
-        , sendf
-        , closef
-        , sock = undefined :: 'undefined' | inet:socket()
-        }).
-
-init_request({_Cmd, Opts}) ->
-    #{protocol := Proto, address := Address0, port := Port} = Opts,
-    %% FIXME: proper handling of address!
-    {ok, Address} = inet:parse_address(Address0),
-    Req =
-        case Proto of
-            udp ->
-                ConnectF =
-                    fun() ->
-                            gen_udp:open(Port,
-                                         [binary, {active, ?ACTIVE_COUNT}])
-                    end,
-                Sendf =
-                    fun(Sock, Packet) ->
-                            gen_udp:send(Sock, Address, Port, Packet)
-                    end,
-                CloseF = fun gen_udp:close/1,
-                #req{sock = undefined,
-                     gw = {Address, Port},
-                     connectf = ConnectF,
-                     sendf = Sendf,
-                     closef = CloseF};
-            tcp ->
-                ConnectF =
-                    fun() ->
-                            TcpOpts = [binary,
-                                       {active, ?ACTIVE_COUNT},
-                                       {packet, line}],
-                            gen_tcp:connect(Address, Port, TcpOpts,
-                                            ?CONNECT_TIMEOUT)
-                    end,
-                Sendf = fun gen_tcp:send/2,
-                CloseF = fun gen_tcp:close/1,
-                #req{sock = undefined,
-                     gw = {Address, Port},
-                     connectf = ConnectF,
-                     sendf = Sendf,
-                     closef = CloseF}
-        end,
-    connect(Req).
-
-connect(#req{connectf = ConnectF} = R) ->
-    case ConnectF() of
-        {ok, Sock} ->
-            {ok, R#req{sock = Sock}};
-        {error, Error} ->
-            ErrStr =
-                case Error of
-                    timeout ->
-                        "timeout";
-                    _ ->
-                        inet:format_error(Error)
-                end,
-            {Address, Port} = R#req.gw,
-            io:format(standard_error,
-                      "Failed to connect to NMEA gateway ~s:~p: ~s\n",
-                      [Address, Port, ErrStr]),
-            halt(1)
-    end.
-
-loop(R, HandleF, HandleS) ->
-    receive
-        {udp, _, _, _, Data} ->
-            {R1, HandleS1} = handle_data(Data, R, HandleF, HandleS),
-            loop(R1, HandleF, HandleS1);
-        {tcp, _, Data} ->
-            {R1, HandleS1} = handle_data(Data, R, HandleF, HandleS),
-            loop(R1, HandleF, HandleS1);
-        {udp_passive, Sock} ->
-            inet:setopts(Sock, [{active, ?ACTIVE_COUNT}]),
-            loop(R, HandleF, HandleS);
-        {tcp_passive, Sock} ->
-            inet:setopts(Sock, [{active, ?ACTIVE_COUNT}]),
-            loop(R, HandleF, HandleS);
-        Else ->
-            HandleS1 = HandleF(Else, HandleS),
-            loop(R, HandleF, HandleS1)
-    end.
-
-handle_data(<<>>, R, _, HandleS) ->
-    {R, HandleS};
-handle_data(Data, #req{buf = Buf} = R, HandleF, HandleS0) ->
-    {Buf1, Lines} = lines(Buf, Data),
-    HandleS2 =
-        lists:foldl(
-          fun(Line, HandleS1) ->
-                  HandleF(Line, HandleS1)
-          end,
-          HandleS0,
-          Lines),
-    {R#req{buf = Buf1}, HandleS2}.
-
-lines(Buf, Data) ->
-    case binary:last(Data) of
-        $\n when Buf == undefined ->
-            %% no need to buffer anything!
-            Lines =
-                binary:split(Data, <<"\r\n">>, [global, trim_all]),
-            {undefined, Lines};
-        $\n ->
-            %% no need to buffer, but we have buffered data
-            [RestLine | Lines] =
-                binary:split(Data, <<"\r\n">>, [global, trim_all]),
-            {undefined, [<<Buf/binary, RestLine/binary>> | Lines]};
-        _ when Buf == undefined ->
-            %% we need to buffer
-            Lines =
-                binary:split(Data, <<"\r\n">>, [global, trim_all]),
-            %% the last part of Lines needs to be buffered
-            [Buf1 | T] = lists:reverse(Lines),
-            {Buf1, lists:reverse(T)};
-        _ ->
-            %% we need to buffer, and we have buffered data
-            [RestLine | Lines] =
-                binary:split(Data, <<"\r\n">>, [global, trim_all]),
-            [Buf1 | T] = lists:reverse(Lines),
-            {Buf1, [<<Buf/binary, RestLine/binary>> | lists:reverse(T)]}
-    end.
-
 
 cmd_dump() ->
     #{cmd => "dump",
@@ -538,213 +406,16 @@ cmd_get_devices() ->
                  type => {int, [{0, unbounded}]}, default => 20000}],
       cb => fun do_get_devices/3}.
 
-%% send isoRequest:pgn = 60928 - to 255
-%% send 59904 isoRequest:pgn = 126996 - to each device
-%% send 59904 isoRequest:pgn = 126998 - to each device
-
--record(get_devices, {
-          n2k_state = n2k:decode_nmea_init()
-        , st = collect_devices
-        , req
-        , devices = []
-        , pgnLists = []
-        , isoAddressClaims = []
-        , productInformations = []
-        , configInformations = []
-        }).
-
 do_get_devices(_Env, CmdStack, Timeout) ->
     [ReqCmd | _] = CmdStack,
-    {ok, R} = init_request(ReqCmd),
-    S = #get_devices{req = R},
-
-    %% Send first request for 60928 to all devices
-    ok = (R#req.sendf)(R#req.sock, isoRequest(60928, 255)),
-    erlang:send_after(1000, self(), step0),
-
-    %% Set timer to terminate collection of responses
-    erlang:send_after(Timeout, self(), stop),
-
-    %% Collect responses
-    loop(R, fun get_devices_raw_line/2, S).
-
-isoRequest(PGN, Dst) ->
-    CanId = {_Pri = 4, 59904, _Src = 95, Dst},
-    Data = <<PGN:24/little-unsigned>>,
-    n2k_raw:encode_raw_frame(CanId, Data).
-
-get_devices_raw_line(Line, S0) when is_binary(Line) ->
-    {Frame, _Dir} = n2k_raw:decode_raw(Line),
-    {_Time, {_Pri, PGN, Src, _Dst}, _Data} = Frame,
-    S1 =
-        if S0#get_devices.st == collect_devices ->
-                Devices = S0#get_devices.devices,
-                case lists:member(Src, Devices) of
-                    false ->
-                        S0#get_devices{devices = [Src | Devices]};
-                    true ->
-                        S0
-                end;
-           true ->
-                S0
-        end,
-    if PGN == 60928 orelse PGN == 126464 orelse
-       PGN == 126996 orelse PGN == 126998 ->
-            case n2k:decode_nmea(Frame, S1#get_devices.n2k_state) of
-                {true, Msg, N2kState1} ->
-                    S2 = S1#get_devices{n2k_state = N2kState1},
-                    if PGN == 60928 ->
-                            L = maybe_add(Src, Msg,
-                                          S1#get_devices.isoAddressClaims),
-                            S2#get_devices{isoAddressClaims = L};
-                       PGN == 126464 ->
-                            {_, _, {_, Fields}} = Msg,
-                            case lists:member({functionCode, 0}, Fields) of
-                                true ->
-                                    L = maybe_add(Src, [P || {pgn,P} <- Fields],
-                                                  S1#get_devices.pgnLists),
-                                    S2#get_devices{pgnLists = L};
-                                false ->
-                                    S2
-                            end;
-                       PGN == 126996 ->
-                            L = maybe_add(Src, Msg,
-                                          S1#get_devices.productInformations),
-                            S2#get_devices{productInformations = L};
-                       PGN == 126998 ->
-                            L = maybe_add(Src, Msg,
-                                          S1#get_devices.configInformations),
-                            S2#get_devices{configInformations = L}
-                    end;
-                {false, N2kState1} ->
-                    S1#get_devices{n2k_state = N2kState1};
-                {error, _, N2kState1} ->
-                    S1#get_devices{n2k_state = N2kState1}
-            end;
-       true ->
-            S1
-    end;
-get_devices_raw_line(step0, S) ->
-    %% Send request for 60928 to all devices again
-    #get_devices{req = R} = S,
-    ok = (R#req.sendf)(R#req.sock, isoRequest(60928, 255)),
-    timer:sleep(100),
-    erlang:send_after(1000, self(), {step1, 1}),
-    S;
-get_devices_raw_line({step1, N}, S) ->
-    %% Send request for 60928 to individual devices that didn't reply
-    #get_devices{devices = Devices0, req = R, isoAddressClaims = IAs} = S,
-    case Devices0 -- [Src || {Src, _} <- IAs] of
-        Devices when Devices /= [], N =< 5 ->
-            send_iso_request_to_each_device(60928, Devices, R, {step1, N+1});
-        _ ->
-            self() ! {step2, 1}
-    end,
-    S#get_devices{st = get_info};
-get_devices_raw_line({step2, N}, S) ->
-    %% Send request for 126464 untill all have answered
-    #get_devices{devices = Devices0, req = R, pgnLists = PLs} = S,
-    Devices1 = filter_pgn_list(Devices0, S#get_devices.isoAddressClaims),
-    case Devices1 -- [Src || {Src, _} <- PLs] of
-        Devices when Devices /= [], N =< 5 ->
-            send_iso_request_to_each_device(126464, Devices, R, {step2, N+1});
-        _ ->
-            self() ! {step3, 1}
-    end,
-    S#get_devices{st = get_info};
-get_devices_raw_line({step3, N}, S) ->
-    %% Send request for 126996 untill all have answered
-    #get_devices{devices = Devices0, req = R, pgnLists = PLs,
-                 productInformations = PIs} = S,
-    Devices1 = Devices0 -- [Src || {Src, _} <- PIs],
-    case filter_devices(126996, Devices1, PLs) of
-        Devices when Devices /= [], N =< 5 ->
-            send_iso_request_to_each_device(126996, Devices, R, {step3, N+1});
-        _ ->
-            self() ! {step4, 1}
-    end,
-    S;
-get_devices_raw_line({step4, N}, S) ->
-    %% Send request for 126998 untill all have answered
-    %% Some devices claim they support 126998 but actually doesn't (!)
-    #get_devices{devices = Devices0, req = R, pgnLists = PLs,
-                 configInformations = CIs} = S,
-    ok = (R#req.sendf)(R#req.sock, isoRequest(126998, 255)),
-    Devices1 = Devices0 -- [Src || {Src, _} <- CIs],
-    case filter_devices(126998, Devices1, PLs) of
-        Devices when Devices /= [], N =< 5 ->
-            send_iso_request_to_each_device(126998, Devices, R, {step4, N+1});
-        _ ->
-            self() ! step5
-    end,
-    S;
-get_devices_raw_line(step5, S) ->
-    get_device_done(S);
-get_devices_raw_line(stop, S) ->
-    get_device_done(S).
-
-get_device_done(S) ->
-    X = lists:keysort(1, S#get_devices.isoAddressClaims),
-    Y = lists:keysort(1, S#get_devices.productInformations),
-    Z = lists:keysort(1, S#get_devices.configInformations),
-    fmt_devices(fun io:put_chars/1, X, Y, Z),
-    halt(0).
-
-%% Yacht Devices YDWG-02 doesn't reply to 126464 pgnListTransmitAndReceive.
-%% This is an optimization to avoid timing out on this device.
-filter_pgn_list(Devices, IsoAddressClaims) ->
-    lists:filter(
-      fun(Src) ->
-              {Src, {_Time, _, {isoAddressClaim, Fields}}} =
-                  lists:keyfind(Src, 1, IsoAddressClaims),
-                  [_UniqueNumber,
-                   {manufacturerCode, Code},
-                   _DeviceInstanceLower,
-                   _DeviceInstanceUpper,
-                   {deviceFunction, Function},
-                   {deviceClass, Class} | _] = Fields,
-              if Code == 717,
-                 Function == 25,
-                 Class == 136 ->
-                      false;
-                 true ->
-                      true
-              end
-      end, Devices).
-
-%% Return all devices in `Devices` that claim they support `PGN`.
-filter_devices(PGN, Devices, PLs) ->
-    lists:filter(
-      fun(Src) ->
-              case lists:keysearch(Src, 1, PLs) of
-                  {value, {_, PGNs}} ->
-                      lists:member(PGN, PGNs);
-                  false ->
-                      false
-              end
-      end, Devices).
-
-send_iso_request_to_each_device(PGN, Devices, R, Next) ->
-    %% FIXME: add verbose flag?
-    %io:format(standard_error, "Req ~p from ~p\n", [PGN, lists:sort(Devices)]),
-    Collector = self(),
-    spawn_link(
-      fun() ->
-              lists:foreach(
-                fun(Dst) ->
-                        ok = (R#req.sendf)(R#req.sock, isoRequest(PGN, Dst)),
-                        timer:sleep(100),
-                        ok
-                end, Devices),
-              Collector ! Next
-      end).
-
-maybe_add(Src, Msg, L) ->
-    case lists:keymember(Src, 1, L) of
-        false ->
-            [{Src, Msg} | L];
-        true ->
-            L
+    {_Cmd, Opts} = ReqCmd,
+    #{protocol := Proto, address := Address0, port := Port} = Opts,
+    %% FIXME: proper handling of address!
+    {ok, Address} = inet:parse_address(Address0),
+    case n2k_get_devices:get_devices(Proto, Address, Port, Timeout) of
+        {ok, Res} ->
+            fmt_devices(fun io:put_chars/1, Res),
+            halt(0)
     end.
 
 guess_format(FName) ->
@@ -814,71 +485,29 @@ mk_expr_filter_fun(Expr, OutF, OutFInitState) ->
 -define(PRODUCTINFORMATION_HEADER, " ~-15s ~-15s ~-8s ~-3s").
 -define(CONFIGINFORMATION_HEADER, " ~-15s ~-15s ~-15s").
 
-fmt_devices(WriteF, LA, LB, LC) ->
+fmt_devices(WriteF, Res) ->
     WriteF("SRC"),
     WriteF(io_lib:format(?ISOADDRESSCLAIM_HEADER,
                          ["MANUFACTURER", "FUNCTION"])),
-    if LB /= [] ->
-            WriteF(io_lib:format(
-                     ?PRODUCTINFORMATION_HEADER,
-                     ["MODEL", "SOFTWARE VSN", "NMEA2000", "LEN"]));
-       true ->
-            ok
-    end,
-
-    if LC /= [] ->
-            WriteF(io_lib:format(
-                     ?CONFIGINFORMATION_HEADER,
-                     ["DESCR1", "DESCR2", "INFO"]));
-       true ->
-            ok
-    end,
-
+    WriteF(io_lib:format(
+             ?PRODUCTINFORMATION_HEADER,
+             ["MODEL", "SOFTWARE VSN", "NMEA2000", "LEN"])),
+    WriteF(io_lib:format(
+             ?CONFIGINFORMATION_HEADER,
+             ["DESCR1", "DESCR2", "INFO"])),
     WriteF("\n"),
     WriteF("==="),
     WriteF(io_lib:format(?ISOADDRESSCLAIM_HEADER,
                          ["============", "========"])),
-    if LB /= [] ->
-            WriteF(io_lib:format(
-                     ?PRODUCTINFORMATION_HEADER,
-                     ["=====", "============", "========", "==="]));
-       true ->
-            ok
-    end,
-
-    if LC /= [] ->
-            WriteF(io_lib:format(
-                     ?CONFIGINFORMATION_HEADER,
-                     ["======", "======", "===="]));
-       true ->
-            ok
-    end,
-
+    WriteF(io_lib:format(
+             ?PRODUCTINFORMATION_HEADER,
+             ["=====", "============", "========", "==="])),
+    WriteF(io_lib:format(
+             ?CONFIGINFORMATION_HEADER,
+             ["======", "======", "===="])),
     WriteF("\n"),
 
-    fmt_devices0(WriteF, merge(LA, LB, LC)).
-
-merge(LA, LB, LC) ->
-    merge0([{Src, {A, undefined, undefined}} || {Src, A} <- LA],
-           merge0([{Src, {undefined, B, undefined}} || {Src, B} <- LB],
-                  [{Src, {undefined, undefined, C}} || {Src, C} <- LC])).
-
-merge0([{Src, X} | TX], [{Src, Y} | TY]) ->
-    [{Src, merge_tup(X, Y)} | merge0(TX, TY)];
-merge0([{SrcX, _} = HX | TX], [{SrcY, _} | _] = LY) when SrcX < SrcY ->
-    [HX | merge0(TX, LY)];
-merge0(LX, [HY | TY]) ->
-    [HY | merge0(LX, TY)];
-merge0([], LY) ->
-    LY;
-merge0(LX, []) ->
-    LX.
-
-%% The first tuple has 1 non-undefined
-merge_tup({undefined,BX,undefined}, {AY,_BY,CY}) ->
-    {AY,BX,CY};
-merge_tup({AX,undefined,undefined}, {_AY,BY,CY}) ->
-    {AX,BY,CY}.
+    fmt_devices0(WriteF, Res).
 
 fmt_devices0(WriteF, [{Src, {A, B, C}} | T]) ->
     WriteF(fmt_src(Src)),
