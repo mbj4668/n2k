@@ -1,7 +1,9 @@
--module(n2k_get_devices).
+-module(n2k_devices).
 -include("n2k_request.hrl").
 
--export([get_devices/4]).
+-export([get_devices/4,
+         print_devices/2,
+         merge_device_information/3]).
 
 %% send isoRequest:pgn = 60928 - to 255
 %% send 59904 isoRequest:pgn = 126996 - to each device
@@ -11,7 +13,7 @@
           n2k_state = n2k:decode_nmea_init()
         , st = collect_devices
         , req
-        , devices = []
+        , devices = [] :: [integer()]
         , pgnLists = []
         , isoAddressClaims = []
         , productInformations = []
@@ -50,7 +52,7 @@ do_get_devices(R, Timeout) ->
     A = lists:keysort(1, S1#get_devices.isoAddressClaims),
     B = lists:keysort(1, S1#get_devices.productInformations),
     C = lists:keysort(1, S1#get_devices.configInformations),
-    {ok, merge(A, B, C)}.
+    {ok, merge_device_information(A, B, C)}.
 
 isoRequest(PGN, Dst) ->
     CanId = {_Pri = 4, 59904, _Src = 95, Dst},
@@ -224,7 +226,7 @@ maybe_add(Src, Msg, L) ->
             L
     end.
 
-merge(LA, LB, LC) ->
+merge_device_information(LA, LB, LC) ->
     merge0([{Src, {A, undefined, undefined}} || {Src, A} <- LA],
            merge0([{Src, {undefined, B, undefined}} || {Src, B} <- LB],
                   [{Src, {undefined, undefined, C}} || {Src, C} <- LC])).
@@ -245,3 +247,181 @@ merge_tup({undefined,BX,undefined}, {AY,_BY,CY}) ->
     {AY,BX,CY};
 merge_tup({AX,undefined,undefined}, {_AY,BY,CY}) ->
     {AX,BY,CY}.
+
+-define(ISOADDRESSCLAIM_HEADER, " ~-15s ~-40s").
+-define(PRODUCTINFORMATION_HEADER, " ~-15s ~-15s ~-8s ~-3s").
+-define(CONFIGINFORMATION_HEADER, " ~-15s ~-15s ~-15s").
+
+-spec print_devices(fun(),
+                    [{DeviceId :: integer(),
+                      {IsoAddressClaim :: n2k:message() | undefined,
+                       ProductInformation :: n2k:message() | undefined,
+                       ConfigInformation :: n2k:message() | undefined}}]) ->
+          ok.
+print_devices(WriteF, Res) when Res /= 1 ->
+    Cs = ["SRC", "MANUFACTURER", "FUNCTION",
+          "MODEL", "SOFTWARE VSN", "NMEA2000", "LEN",
+          "DESCR1", "DESCR2", "INFO"],
+    R0 = ["===", "============", "========",
+          "=====", "============", "========", "===",
+          "======", "======", "===="],
+    L = lists:map(
+          fun({Src, {A, B, C}}) ->
+                  {A0,A1} = pi(A),
+                  {B0,B1,B2,B3} = pp(B),
+                  {C0,C1,C2} = pc(C),
+                  {Src, A0, A1, B0, B1, B2, B3, C0, C1, C2}
+          end, Res),
+    WriteF(grid:format([R0|L], #{header => true, columns => Cs}));
+print_devices(WriteF, Res) ->
+    WriteF("SRC"),
+    WriteF(io_lib:format(?ISOADDRESSCLAIM_HEADER,
+                         ["MANUFACTURER", "FUNCTION"])),
+    WriteF(io_lib:format(
+             ?PRODUCTINFORMATION_HEADER,
+             ["MODEL", "SOFTWARE VSN", "NMEA2000", "LEN"])),
+    WriteF(io_lib:format(
+             ?CONFIGINFORMATION_HEADER,
+             ["DESCR1", "DESCR2", "INFO"])),
+    WriteF("\n"),
+    WriteF("==="),
+    WriteF(io_lib:format(?ISOADDRESSCLAIM_HEADER,
+                         ["============", "========"])),
+    WriteF(io_lib:format(
+             ?PRODUCTINFORMATION_HEADER,
+             ["=====", "============", "========", "==="])),
+    WriteF(io_lib:format(
+             ?CONFIGINFORMATION_HEADER,
+             ["======", "======", "===="])),
+    WriteF("\n"),
+
+    print_devices0(WriteF, Res).
+
+print_devices0(WriteF, [{Src, {A, B, C}} | T]) ->
+    WriteF(fmt_src(Src)),
+    WriteF(fmt_isoAddressClaim(A)),
+    WriteF(fmt_productInformation(B)),
+    WriteF(fmt_configInformation(C)),
+    WriteF("\n"),
+    print_devices0(WriteF, T);
+print_devices0(_, []) ->
+    ok.
+
+fmt_src(Src) ->
+    io_lib:format("~3w", [Src]).
+
+pi({_Time, _, {isoAddressClaim, Fields}}) ->
+    [_UniqueNumber,
+     {manufacturerCode, Code},
+     _DeviceInstanceLower,
+     _DeviceInstanceUpper,
+     {deviceFunction, Function},
+     {deviceClass, Class} | _] = Fields,
+    {get_isoAddressClaim_enum(manufacturerCode, Code),
+     get_isoAddressClaim_enum(deviceFunction, {Class, Function})};
+pi(undefined) ->
+    {"", ""}.
+
+
+fmt_isoAddressClaim({_Time, _, {isoAddressClaim, Fields}}) ->
+    [_UniqueNumber,
+     {manufacturerCode, Code},
+     _DeviceInstanceLower,
+     _DeviceInstanceUpper,
+     {deviceFunction, Function},
+     {deviceClass, Class} | _] = Fields,
+    io_lib:format(
+      ?ISOADDRESSCLAIM_HEADER,
+      [get_isoAddressClaim_enum(manufacturerCode, Code),
+       get_isoAddressClaim_enum(deviceFunction, {Class, Function})]);
+fmt_isoAddressClaim(undefined) ->
+    io_lib:format(
+      ?ISOADDRESSCLAIM_HEADER,
+      ["", ""]).
+
+pp({_Time, _, {productInformation, Fields}}) ->
+    [{nmea2000Version, Nmea2000Version},
+     {productCode, _ProductCode},
+     {modelId, ModelId},
+     {softwareVersionCode, SoftwareVersionCode},
+     {modelVersion, _ModelVersion},
+     {modelSerialCode, _ModelSerialCode},
+     {certificationLevel, _CertificationLevel},
+     {loadEquivalency, LoadEquivalency} | _] = Fields,
+    {ModelId,
+     SoftwareVersionCode,
+     io_lib:format("~.3f", [Nmea2000Version*0.001]),
+     LoadEquivalency};
+pp(undefined) ->
+    {"", "", "", ""}.
+
+
+fmt_productInformation({_Time, _, {productInformation, Fields}}) ->
+    [{nmea2000Version, Nmea2000Version},
+     {productCode, _ProductCode},
+     {modelId, ModelId},
+     {softwareVersionCode, SoftwareVersionCode},
+     {modelVersion, _ModelVersion},
+     {modelSerialCode, _ModelSerialCode},
+     {certificationLevel, _CertificationLevel},
+     {loadEquivalency, LoadEquivalency} | _] = Fields,
+    io_lib:format(?PRODUCTINFORMATION_HEADER,
+                  [ModelId,
+                   SoftwareVersionCode,
+                   io_lib:format("~.3f", [Nmea2000Version*0.001]),
+                   io_lib:format("~w", [LoadEquivalency])]);
+fmt_productInformation(undefined) ->
+    io_lib:format(?PRODUCTINFORMATION_HEADER,
+                  ["", "", "", ""]).
+
+pc({_Time, _, {configurationInformation, Fields}}) ->
+    [{installationDescription1, InstallationDescription1},
+     {installationDescription2, InstallationDescription2},
+     {manufacturerInformation, ManufacturerInformation} | _] = Fields,
+    {binary_to_list(InstallationDescription1),
+     InstallationDescription2,
+     ManufacturerInformation};
+pc(undefined) ->
+    {"", "", ""}.
+
+
+
+fmt_configInformation({_Time, _, {configurationInformation, Fields}}) ->
+    [{installationDescription1, InstallationDescription1},
+     {installationDescription2, InstallationDescription2},
+     {manufacturerInformation, ManufacturerInformation} | _] = Fields,
+    io_lib:format(?CONFIGINFORMATION_HEADER,
+                  [InstallationDescription1,
+                   InstallationDescription2,
+                   ManufacturerInformation]);
+fmt_configInformation(undefined) ->
+    io_lib:format(?CONFIGINFORMATION_HEADER,
+                  ["", "", ""]).
+
+
+get_isoAddressClaim_enum(Field, Val) ->
+    Enums =
+        case n2k_pgn:type_info(isoAddressClaim, Field) of
+            {enums, Enums0} ->
+                Enums0;
+            {enums, _, Enums0} ->
+                Enums0
+        end,
+    case lists:keyfind(Val, 2, Enums) of
+        {Str, _} ->
+            Str;
+        _ when is_integer(Val) ->
+            integer_to_list(Val);
+        _ ->
+            {Class, Function} = Val,
+            {enums, ClassEnums} =
+                n2k_pgn:type_info(isoAddressClaim, deviceClass),
+            ClassStr =
+                case lists:keyfind(Class, 2, ClassEnums) of
+                    {Str, _} ->
+                        Str;
+                    _ ->
+                        integer_to_list(Class)
+                end,
+            [ClassStr, $/, integer_to_list(Function)]
+    end.

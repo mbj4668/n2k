@@ -198,7 +198,9 @@ do_convert(Env, CmdStack, Quiet, InFmt0, OutFmt, PStr,
                              X = lists:keysort(1, X0),
                              Y = lists:keysort(1, Y0),
                              Z = lists:keysort(1, Z0),
-                             fmt_devices(WriteF, X, Y, Z);
+                             Merged =
+                                 n2k_devices:merge_device_information(X, Y, Z),
+                             n2k_devices:print_devices(WriteF, Merged);
                         (_, S) ->
                              S
                      end,
@@ -361,8 +363,8 @@ cmd_dump() ->
 do_dump(_Env, CmdStack, Expr, OutFmt) ->
     [ReqCmd | _] = CmdStack,
     S = #dump{outfmt = OutFmt, expr = Expr},
-    {ok, R} = init_request(ReqCmd),
-    loop(R, fun dump_raw_line/2, S).
+    {ok, R} = n2k_request:init_request(ReqCmd),
+    n2k_request:loop(R, fun dump_raw_line/2, S).
 
 %% Line is unparsed bytes; one line of RAW format.
 dump_raw_line(Line, S) ->
@@ -412,9 +414,9 @@ do_get_devices(_Env, CmdStack, Timeout) ->
     #{protocol := Proto, address := Address0, port := Port} = Opts,
     %% FIXME: proper handling of address!
     {ok, Address} = inet:parse_address(Address0),
-    case n2k_get_devices:get_devices(Proto, Address, Port, Timeout) of
+    case n2k_devices:get_devices(Proto, Address, Port, Timeout) of
         {ok, Res} ->
-            fmt_devices(fun io:put_chars/1, Res),
+            n2k_devices:print_devices(fun io:put_chars/1, Res),
             halt(0)
     end.
 
@@ -480,122 +482,6 @@ mk_expr_filter_fun(Expr, OutF, OutFInitState) ->
         (M, OutState) ->
              OutF(M, OutState)
      end, OutFInitState}.
-
--define(ISOADDRESSCLAIM_HEADER, " ~-15s ~-40s").
--define(PRODUCTINFORMATION_HEADER, " ~-15s ~-15s ~-8s ~-3s").
--define(CONFIGINFORMATION_HEADER, " ~-15s ~-15s ~-15s").
-
-fmt_devices(WriteF, Res) ->
-    WriteF("SRC"),
-    WriteF(io_lib:format(?ISOADDRESSCLAIM_HEADER,
-                         ["MANUFACTURER", "FUNCTION"])),
-    WriteF(io_lib:format(
-             ?PRODUCTINFORMATION_HEADER,
-             ["MODEL", "SOFTWARE VSN", "NMEA2000", "LEN"])),
-    WriteF(io_lib:format(
-             ?CONFIGINFORMATION_HEADER,
-             ["DESCR1", "DESCR2", "INFO"])),
-    WriteF("\n"),
-    WriteF("==="),
-    WriteF(io_lib:format(?ISOADDRESSCLAIM_HEADER,
-                         ["============", "========"])),
-    WriteF(io_lib:format(
-             ?PRODUCTINFORMATION_HEADER,
-             ["=====", "============", "========", "==="])),
-    WriteF(io_lib:format(
-             ?CONFIGINFORMATION_HEADER,
-             ["======", "======", "===="])),
-    WriteF("\n"),
-
-    fmt_devices0(WriteF, Res).
-
-fmt_devices0(WriteF, [{Src, {A, B, C}} | T]) ->
-    WriteF(fmt_src(Src)),
-    WriteF(fmt_isoAddressClaim(A)),
-    WriteF(fmt_productInformation(B)),
-    WriteF(fmt_configInformation(C)),
-    WriteF("\n"),
-    fmt_devices0(WriteF, T);
-fmt_devices0(_, []) ->
-    ok.
-
-fmt_src(Src) ->
-    io_lib:format("~3w", [Src]).
-
-fmt_isoAddressClaim({_Time, _, {isoAddressClaim, Fields}}) ->
-    [_UniqueNumber,
-     {manufacturerCode, Code},
-     _DeviceInstanceLower,
-     _DeviceInstanceUpper,
-     {deviceFunction, Function},
-     {deviceClass, Class} | _] = Fields,
-    io_lib:format(
-      ?ISOADDRESSCLAIM_HEADER,
-      [get_isoAddressClaim_enum(manufacturerCode, Code),
-       get_isoAddressClaim_enum(deviceFunction, {Class, Function})]);
-fmt_isoAddressClaim(undefined) ->
-    io_lib:format(
-      ?ISOADDRESSCLAIM_HEADER,
-      ["", ""]).
-
-
-fmt_productInformation({_Time, _, {productInformation, Fields}}) ->
-    [{nmea2000Version, Nmea2000Version},
-     {productCode, _ProductCode},
-     {modelId, ModelId},
-     {softwareVersionCode, SoftwareVersionCode},
-     {modelVersion, _ModelVersion},
-     {modelSerialCode, _ModelSerialCode},
-     {certificationLevel, _CertificationLevel},
-     {loadEquivalency, LoadEquivalency} | _] = Fields,
-    io_lib:format(?PRODUCTINFORMATION_HEADER,
-                  [ModelId,
-                   SoftwareVersionCode,
-                   io_lib:format("~.3f", [Nmea2000Version*0.001]),
-                   io_lib:format("~w", [LoadEquivalency])]);
-fmt_productInformation(undefined) ->
-    io_lib:format(?PRODUCTINFORMATION_HEADER,
-                  ["", "", "", ""]).
-
-fmt_configInformation({_Time, _, {configurationInformation, Fields}}) ->
-    [{installationDescription1, InstallationDescription1},
-     {installationDescription2, InstallationDescription2},
-     {manufacturerInformation, ManufacturerInformation} | _] = Fields,
-    io_lib:format(?CONFIGINFORMATION_HEADER,
-                  [InstallationDescription1,
-                   InstallationDescription2,
-                   ManufacturerInformation]);
-fmt_configInformation(undefined) ->
-    io_lib:format(?CONFIGINFORMATION_HEADER,
-                  ["", "", ""]).
-
-
-get_isoAddressClaim_enum(Field, Val) ->
-    Enums =
-        case n2k_pgn:type_info(isoAddressClaim, Field) of
-            {enums, Enums0} ->
-                Enums0;
-            {enums, _, Enums0} ->
-                Enums0
-        end,
-    case lists:keyfind(Val, 2, Enums) of
-        {Str, _} ->
-            Str;
-        _ when is_integer(Val) ->
-            integer_to_list(Val);
-        _ ->
-            {Class, Function} = Val,
-            {enums, ClassEnums} =
-                n2k_pgn:type_info(isoAddressClaim, deviceClass),
-            ClassStr =
-                case lists:keyfind(Class, 2, ClassEnums) of
-                    {Str, _} ->
-                        Str;
-                    _ ->
-                        integer_to_list(Class)
-                end,
-            [ClassStr, $/, integer_to_list(Function)]
-    end.
 
 frame_lost(Src, PGN, Order, ETab, Cnts) ->
     case ets:lookup(ETab, {Src, PGN}) of
