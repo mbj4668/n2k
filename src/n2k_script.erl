@@ -3,6 +3,8 @@
 %%% Reads 'raw', 'csv', 'dat' and 'can' files, and converts
 %%% to 'csv' or pretty text.
 -module(n2k_script).
+-include("n2k_request.hrl").
+
 -export([main/1]).
 -export([parse_expr/1]).
 
@@ -321,7 +323,8 @@ cmd_request() ->
       required_cmd => true,
       cmds =>
           [cmd_dump(),
-           cmd_get_devices()]}.
+           cmd_get_devices(),
+           cmd_get_depth()]}.
 
 default_gw_proto() ->
     case os:getenv("N2K_GW_PROTO") of
@@ -362,8 +365,12 @@ cmd_dump() ->
 
 do_dump(_Env, CmdStack, Expr, OutFmt) ->
     [ReqCmd | _] = CmdStack,
+    {_Cmd, Opts} = ReqCmd,
+    #{protocol := Proto, address := Address0, port := Port} = Opts,
+    %% FIXME: proper handling of address!
+    {ok, Address} = inet:parse_address(Address0),
+    {ok, R} = n2k_request:init_request(Proto, Address, Port),
     S = #dump{outfmt = OutFmt, expr = Expr},
-    {ok, R} = n2k_request:init_request(ReqCmd),
     n2k_request:loop(R, fun dump_raw_line/2, S).
 
 %% Line is unparsed bytes; one line of RAW format.
@@ -419,6 +426,61 @@ do_get_devices(_Env, CmdStack, Timeout) ->
             n2k_devices:print_devices(fun io:put_chars/1, Res),
             halt(0)
     end.
+
+%% FIXME: move to n2k_maretron.erl
+
+cmd_get_depth() ->
+    #{cmd => "get-depth",
+      opts => [#{short => $d, long => "device",
+                 type => int}],
+      cb => fun do_get_depth/3}.
+
+-record(get_depth, {n2k_state = n2k:decode_nmea_init()
+                   , dev}).
+
+do_get_depth(_Env, CmdStack, Device) ->
+    [ReqCmd | _] = CmdStack,
+    {_Cmd, Opts} = ReqCmd,
+    #{protocol := Proto, address := Address0, port := Port} = Opts,
+    %% FIXME: proper handling of address!
+    {ok, Address} = inet:parse_address(Address0),
+    {ok, R} = n2k_request:init_request(Proto, Address, Port),
+
+    {CanIdInt, Frames} = nmeaCommandGroupFunction_Request(Device),
+    lists:foreach(
+      fun(Frame) ->
+              RawFrame = n2k_raw:encode_raw_frame(CanIdInt, Frame),
+              ok = (R#req.sendf)(R#req.sock, RawFrame),
+              timer:sleep(10)
+      end, Frames),
+    Msg = n2k_request:loop(R, fun get_depth_raw_line/2,
+                          #get_depth{dev = Device}),
+    io:format("~s\n", [n2k:fmt_nmea_message(Msg, true)]).
+
+%% FIXME: generalize this Request-Response pattern
+
+%% FIXME: on timeout, re-send, abort after N attempts.
+get_depth_raw_line(Line, S) when is_binary(Line) ->
+    {Frame, _Dir} = n2k_raw:decode_raw(Line),
+    {_Time, {_Pri, PGN, Src, _Dst}, _Data} = Frame,
+    if PGN == 126720 andalso Src == S#get_depth.dev ->
+            case n2k:decode_nmea(Frame, S#get_depth.n2k_state) of
+                {true, Msg, _N2kState1} ->
+                    {done, Msg};
+                {false, N2kState1} ->
+                    S#get_depth{n2k_state = N2kState1};
+                {error, _, N2kState1} ->
+                    S#get_depth{n2k_state = N2kState1}
+            end;
+       true ->
+            S
+    end.
+
+
+nmeaCommandGroupFunction_Request(Dst) ->
+    CanId = {_Pri = 4, 126208, _Src = 95, Dst},
+    Data = <<0,0,239,1,255,255,255,255,255,255,1,55,0>>,
+    n2k:encode_nmea_fast_message(CanId, Data, 1).
 
 guess_format(FName) ->
     {ok, Fd} = file:open(FName, [read, raw, binary, read_ahead]),
@@ -504,6 +566,7 @@ frame_lost(Src, PGN, Order, ETab, Cnts) ->
 %% test =  pgn-keyword sep integer* /
 %%         src-keyword sep integer* /
 %%         dst-keyword sep integer* /
+%%         dev-keyword sep integer* /
 %%
 %% Can be rewritten as:
 %%   x = y ("and"/"or" y)*
@@ -592,6 +655,9 @@ get_tok(S0) ->
         "dst" ++ [H | T] when ?is_sep(H) ->
             {Int, S2} = get_integer(skip_ws(T)),
             {{dst, Int}, S2};
+        "dev" ++ [H | T] when ?is_sep(H) ->
+            {Int, S2} = get_integer(skip_ws(T)),
+            {{dev, Int}, S2};
         [] ->
             'eof'
     end.
@@ -624,6 +690,7 @@ eval(Expr, Frame) ->
                 {pgn, PGN} -> true;
                 {src, Src} -> true;
                 {dst, Dst} -> true;
+                {dev, Dev} -> Dev == Src orelse Dev == Dst;
                 _ -> false
             end
     end.

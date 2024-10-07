@@ -132,7 +132,7 @@ get_devices_raw_line({step2, N}, S) ->
     #get_devices{devices = Devices0, req = R, pgnLists = PLs} = S,
     Devices1 = filter_pgn_list(Devices0, S#get_devices.isoAddressClaims),
     case Devices1 -- [Src || {Src, _} <- PLs] of
-        Devices when Devices /= [], N =< 5 ->
+        Devices when Devices /= [], N =< 10 ->
             send_iso_request_to_each_device(126464, Devices, R, {step2, N+1});
         _ ->
             self() ! {step3, 1}
@@ -144,7 +144,7 @@ get_devices_raw_line({step3, N}, S) ->
                  productInformations = PIs} = S,
     Devices1 = Devices0 -- [Src || {Src, _} <- PIs],
     case filter_devices(126996, Devices1, PLs) of
-        Devices when Devices /= [], N =< 5 ->
+        Devices when Devices /= [], N =< 10 ->
             send_iso_request_to_each_device(126996, Devices, R, {step3, N+1});
         _ ->
             self() ! {step4, 1}
@@ -158,7 +158,7 @@ get_devices_raw_line({step4, N}, S) ->
     ok = (R#req.sendf)(R#req.sock, isoRequest(126998, 255)),
     Devices1 = Devices0 -- [Src || {Src, _} <- CIs],
     case filter_devices(126998, Devices1, PLs) of
-        Devices when Devices /= [], N =< 5 ->
+        Devices when Devices /= [], N =< 10 ->
             send_iso_request_to_each_device(126998, Devices, R, {step4, N+1});
         _ ->
             self() ! step5

@@ -1,6 +1,6 @@
 -module(n2k_request).
 
--export([init_request/3, loop/3]).
+-export([init_request/3, init_request/4, loop/3]).
 
 -include("n2k_request.hrl").
 
@@ -9,12 +9,15 @@
 -define(ACTIVE_COUNT, true).
 
 init_request(Proto, Address, Port) ->
+    init_request(Proto, Address, Port, Port).
+
+init_request(Proto, Address, Port, LPort) ->
     Req =
         case Proto of
             udp ->
                 ConnectF =
                     fun() ->
-                            gen_udp:open(Port,
+                            gen_udp:open(LPort,
                                          [binary, {active, ?ACTIVE_COUNT}])
                     end,
                 Sendf =
