@@ -17,35 +17,47 @@ init_request(Proto, Address, Port, LPort) ->
             udp ->
                 ConnectF =
                     fun() ->
-                            gen_udp:open(LPort,
-                                         [binary, {active, ?ACTIVE_COUNT}])
+                        gen_udp:open(
+                            LPort,
+                            [binary, {active, ?ACTIVE_COUNT}]
+                        )
                     end,
                 Sendf =
                     fun(Sock, Packet) ->
-                            gen_udp:send(Sock, Address, Port, Packet)
+                        gen_udp:send(Sock, Address, Port, Packet)
                     end,
                 CloseF = fun gen_udp:close/1,
-                #req{sock = undefined,
-                     gw = {Address, Port},
-                     connectf = ConnectF,
-                     sendf = Sendf,
-                     closef = CloseF};
+                #req{
+                    sock = undefined,
+                    gw = {Address, Port},
+                    connectf = ConnectF,
+                    sendf = Sendf,
+                    closef = CloseF
+                };
             tcp ->
                 ConnectF =
                     fun() ->
-                            TcpOpts = [binary,
-                                       {active, ?ACTIVE_COUNT},
-                                       {packet, line}],
-                            gen_tcp:connect(Address, Port, TcpOpts,
-                                            ?CONNECT_TIMEOUT)
+                        TcpOpts = [
+                            binary,
+                            {active, ?ACTIVE_COUNT},
+                            {packet, line}
+                        ],
+                        gen_tcp:connect(
+                            Address,
+                            Port,
+                            TcpOpts,
+                            ?CONNECT_TIMEOUT
+                        )
                     end,
                 Sendf = fun gen_tcp:send/2,
                 CloseF = fun gen_tcp:close/1,
-                #req{sock = undefined,
-                     gw = {Address, Port},
-                     connectf = ConnectF,
-                     sendf = Sendf,
-                     closef = CloseF}
+                #req{
+                    sock = undefined,
+                    gw = {Address, Port},
+                    connectf = ConnectF,
+                    sendf = Sendf,
+                    closef = CloseF
+                }
         end,
     connect(Req).
 
@@ -62,9 +74,11 @@ connect(#req{connectf = ConnectF} = R) ->
                         inet:format_error(Error)
                 end,
             {Address, Port} = R#req.gw,
-            io:format(standard_error,
-                      "Failed to connect to NMEA gateway ~s:~p: ~s\n",
-                      [Address, Port, ErrStr]),
+            io:format(
+                standard_error,
+                "Failed to connect to NMEA gateway ~s:~p: ~s\n",
+                [Address, Port, ErrStr]
+            ),
             halt(1)
     end.
 
@@ -96,11 +110,12 @@ handle_data(Data, #req{buf = Buf} = R, HandleF, HandleS0) ->
     {Buf1, Lines} = lines(Buf, Data),
     HandleS2 =
         lists:foldl(
-          fun(Line, HandleS1) ->
-                  HandleF(Line, HandleS1)
-          end,
-          HandleS0,
-          Lines),
+            fun(Line, HandleS1) ->
+                HandleF(Line, HandleS1)
+            end,
+            HandleS0,
+            Lines
+        ),
     {R#req{buf = Buf1}, HandleS2}.
 
 lines(Buf, Data) ->

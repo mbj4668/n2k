@@ -29,24 +29,28 @@
 -type can_frame() :: can_service_record() | n2k:frame().
 
 -type can_service_record() ::
-        {
-          Time :: integer() % milliseconds
-        , 'service'
-        , Data :: binary()
-        }.
+    {
+        % milliseconds
+        Time :: integer(),
+        'service',
+        Data :: binary()
+    }.
 
 -type dir() :: 'rx' | 'tx'.
 
 -spec read_can_file(FileName :: string()) ->
-          [can_frame()].
+    [can_frame()].
 read_can_file(FName) ->
     lists:reverse(
-      read_can_file(FName, fun(Frame, Acc) -> [Frame | Acc] end, [])).
+        read_can_file(FName, fun(Frame, Acc) -> [Frame | Acc] end, [])
+    ).
 
--spec read_can_file(FileName :: string(),
-                    fun((can_frame(), Acc0 :: term()) -> Acc1 :: term()),
-                    InitAcc :: term()) ->
-          Acc :: term().
+-spec read_can_file(
+    FileName :: string(),
+    fun((can_frame(), Acc0 :: term()) -> Acc1 :: term()),
+    InitAcc :: term()
+) ->
+    Acc :: term().
 read_can_file(FName, F, InitAcc) ->
     {ok, Fd} = file:open(FName, [read, raw, binary, read_ahead]),
     try
@@ -82,7 +86,7 @@ decode_can(Record) ->
             <<_:21, SmallId:11>> ->
                 SmallId
         end,
-    Milliseconds = Minutes*60000 + Ms,
+    Milliseconds = Minutes * 60000 + Ms,
     {{Milliseconds, Id, Data}, Dir}.
 
 decode_can_dir(0) -> rx;
@@ -92,9 +96,9 @@ decode_can_dir(1) -> tx.
 fmt_service_record({Time, 'service', Data}) ->
     Str =
         case Data of
-            <<$Y,$D,$V,$R,$\s,$v,$0,$5>> ->
+            <<$Y, $D, $V, $R, $\s, $v, $0, $5>> ->
                 binary_to_list(Data);
-            <<$Y,$I,C0Speed:4,C1Speed:4,_/binary>> ->
+            <<$Y, $I, C0Speed:4, C1Speed:4, _/binary>> ->
                 "speed CAN#0: " ++ fmt_speed(C0Speed) ++
                     " CAN#1: " ++ fmt_speed(C1Speed);
             _ ->

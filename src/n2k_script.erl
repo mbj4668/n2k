@@ -16,72 +16,115 @@ main(Args) ->
     eclip:parse(Args, spec(), #{}).
 
 spec() ->
-    #{require_cmd => true,
-      cmds =>
-          [cmd_convert(),
-           cmd_request()
-          ]
-     }.
+    #{
+        require_cmd => true,
+        cmds =>
+            [
+                cmd_convert(),
+                cmd_request()
+            ]
+    }.
 
 cmd_convert() ->
-    #{cmd => "convert",
-      help => {doc,
-               [{p, "Convert or pretty print INFILE with NMEA 2000 frames"
+    #{
+        cmd => "convert",
+        help =>
+            {doc, [
+                {p,
+                    "Convert or pretty print INFILE with NMEA 2000 frames"
                     " or messages to some other format."},
-                {dl, "Supported input formats are:",
-                 [{"csv", "CANBOAT's PLAIN format"}
-                  , {"raw", "Yacht Devices' RAW format"}
-                  , {"dat", "Yacht Devices' DAT format"}
-                  , {"can", "Yacht Devices' CAN format"}
-                 ]},
-                {p, "By default, the input format is guessed from the input"
+                {dl, "Supported input formats are:", [
+                    {"csv", "CANBOAT's PLAIN format"},
+                    {"raw", "Yacht Devices' RAW format"},
+                    {"dat", "Yacht Devices' DAT format"},
+                    {"can", "Yacht Devices' CAN format"}
+                ]},
+                {p,
+                    "By default, the input format is guessed from the input"
                     " file contents."},
-                {dl, "Supported output formats are:",
-                 [{"pretty", "Human readable"}
-                  , {"csv", "CANBOAT's PLAIN format"}
-                  , {"devices", "Print product and software information"
-                                " about devices found in the input file"}
-                  , {"errors", "Print errors"}]},
-                {p, "The syntax of a match expression is a boolean expression"
+                {dl, "Supported output formats are:", [
+                    {"pretty", "Human readable"},
+                    {"csv", "CANBOAT's PLAIN format"},
+                    {"devices",
+                        "Print product and software information"
+                        " about devices found in the input file"},
+                    {"errors", "Print errors"}
+                ]},
+                {p,
+                    "The syntax of a match expression is a boolean expression"
                     " of tests, where each test is 'pgn INT', 'src INT', "
                     " 'dst INT, or 'dev INT'.  For example"},
                 {pre, "  pgn 59904 and (src 81 or src 11)"}
-               ]},
-      opts => [#{short => $q, long => "quiet", type => flag},
-               #{short => $F, long => "infmt",
-                 help => "Format of INFILE",
-                 type => {enum, [raw, csv, dat, can]}},
-               #{short => $f, long => "outfmt",
-                 type => {enum, [csv, pretty, devices, errors]},
-                 default => pretty},
-               #{short => $P, long => "pretty-strings", type => flag,
-                 help => "Try to detect strings in binary data"},
-               opt_src(),
-               opt_pgn(),
-               opt_match(),
-               #{short => $o, name => outfile, type => file}],
-      args => [#{name => infname, metavar => "INFILE", type => file}],
-      cb => fun do_convert/11}.
-
+            ]},
+        opts => [
+            #{short => $q, long => "quiet", type => flag},
+            #{
+                short => $F,
+                long => "infmt",
+                help => "Format of INFILE",
+                type => {enum, [raw, csv, dat, can]}
+            },
+            #{
+                short => $f,
+                long => "outfmt",
+                type => {enum, [csv, pretty, devices, errors]},
+                default => pretty
+            },
+            #{
+                short => $P,
+                long => "pretty-strings",
+                type => flag,
+                help => "Try to detect strings in binary data"
+            },
+            opt_src(),
+            opt_pgn(),
+            opt_match(),
+            #{short => $o, name => outfile, type => file}
+        ],
+        args => [#{name => infname, metavar => "INFILE", type => file}],
+        cb => fun do_convert/11
+    }.
 
 opt_src() ->
-    #{long => "src", metavar => "SrcId", multiple => true,
-      type => int,
-      help => "Only include messages from the given devices"}.
+    #{
+        long => "src",
+        metavar => "SrcId",
+        multiple => true,
+        type => int,
+        help => "Only include messages from the given devices"
+    }.
 
 opt_pgn() ->
-    #{long => "pgn", multiple => true, type => int,
-      help => "Only include messages with the given pgns"}.
+    #{
+        long => "pgn",
+        multiple => true,
+        type => int,
+        help => "Only include messages with the given pgns"
+    }.
 
 opt_match() ->
-    #{short => $m, long => "match", metavar => "Expression",
-      type => {custom, fun parse_expr/1},
-      help =>
-          "Only inlcude messages that match the given expression"}.
+    #{
+        short => $m,
+        long => "match",
+        metavar => "Expression",
+        type => {custom, fun parse_expr/1},
+        help =>
+            "Only inlcude messages that match the given expression"
+    }.
 
-
-do_convert(Env, CmdStack, Quiet, InFmt0, OutFmt, PStr,
-           SrcIds, PGNs, Expr, OutFName, InFName) ->
+do_convert(
+    Env,
+    CmdStack,
+    Quiet,
+    InFmt0,
+    OutFmt,
+    PStr,
+    SrcIds,
+    PGNs,
+    Expr,
+    OutFName,
+    InFName
+) ->
     try
         InFmt =
             case InFmt0 of
@@ -95,150 +138,177 @@ do_convert(Env, CmdStack, Quiet, InFmt0, OutFmt, PStr,
                 _ ->
                     InFmt0
             end,
-        if InFmt == dat andalso OutFmt == csv ->
+        if
+            InFmt == dat andalso OutFmt == csv ->
                 throw("Cannot convert dat to csv");
-           true ->
+            true ->
                 ok
         end,
         {CloseF, WriteF} =
-            if OutFName /= undefined ->
+            if
+                OutFName /= undefined ->
                     {ok, OutFd} =
-                        file:open(OutFName,
-                                  [write, raw, binary, delayed_write]),
-                    {fun() -> file:close(OutFd) end,
-                     fun(Bin) -> file:write(OutFd, Bin) end};
-               true ->
-                    {fun() -> ok end,
-                     fun(Bin) -> io:put_chars(Bin) end}
+                        file:open(
+                            OutFName,
+                            [write, raw, binary, delayed_write]
+                        ),
+                    {fun() -> file:close(OutFd) end, fun(Bin) -> file:write(OutFd, Bin) end};
+                true ->
+                    {fun() -> ok end, fun(Bin) -> io:put_chars(Bin) end}
             end,
         PrettyF =
             fun(Message) ->
-                    Str = n2k:fmt_nmea_message(Message, PStr),
-                    WriteF(Str)
+                Str = n2k:fmt_nmea_message(Message, PStr),
+                WriteF(Str)
             end,
         ETab = ets:new(etab, []),
         Cnts = counters:new(?CNT_SIZE, []),
         {OutF, OutFInitState} =
             case OutFmt of
                 csv ->
-                    {fun(Frame, _) when element(2, Frame) /= 'service' ->
-                             WriteF(n2k_csv:encode_csv(Frame));
-                        (_SrvRec, _) ->
-                             []
-                     end,
-                     []};
+                    {
+                        fun
+                            (Frame, _) when element(2, Frame) /= 'service' ->
+                                WriteF(n2k_csv:encode_csv(Frame));
+                            (_SrvRec, _) ->
+                                []
+                        end,
+                        []
+                    };
                 pretty when InFmt == dat ->
-                    {fun({_Time, 'service', _Data} = SrvRec, _) ->
-                             Str = n2k_dat:fmt_service_record(SrvRec),
-                             WriteF(Str);
-                        ({Time, Id, Data}, _) ->
-                             {_Pri, PGN, _Src, _Dst} = Id,
-                             Message = {Time, Id, n2k_pgn:decode(PGN, Data)},
-                             PrettyF(Message)
-                     end,
-                     []};
+                    {
+                        fun
+                            ({_Time, 'service', _Data} = SrvRec, _) ->
+                                Str = n2k_dat:fmt_service_record(SrvRec),
+                                WriteF(Str);
+                            ({Time, Id, Data}, _) ->
+                                {_Pri, PGN, _Src, _Dst} = Id,
+                                Message = {Time, Id, n2k_pgn:decode(PGN, Data)},
+                                PrettyF(Message)
+                        end,
+                        []
+                    };
                 pretty ->
-                    {fun(Frame, State0) when element(2, Frame) /= 'service' ->
-                             case n2k:decode_nmea(Frame, State0) of
-                                 {true, Message, State1} ->
-                                     counters:add(Cnts,
-                                                  ?CNT_MESSAGES,
-                                                  1),
-                                     PrettyF(Message),
-                                     State1;
-                                 {false, State1} ->
-                                     State1;
-                                 {error,
-                                  {frame_loss, Src, PGN, Order, _PrevIndex},
-                                  State1} ->
-                                     frame_lost(Src, PGN, Order, ETab, Cnts),
-                                     State1;
-                                 {error, Error, State1} ->
-                                     io:format(standard_error,
-                                               n2k:fmt_error(Error), []),
-                                     State1
-                             end;
-                        (SrvRec, State0) when InFmt == can ->
-                             Str = n2k_can:fmt_service_record(SrvRec),
-                             WriteF(Str),
-                             State0
-                     end,
-                     n2k:decode_nmea_init()};
+                    {
+                        fun
+                            (Frame, State0) when element(2, Frame) /= 'service' ->
+                                case n2k:decode_nmea(Frame, State0) of
+                                    {true, Message, State1} ->
+                                        counters:add(
+                                            Cnts,
+                                            ?CNT_MESSAGES,
+                                            1
+                                        ),
+                                        PrettyF(Message),
+                                        State1;
+                                    {false, State1} ->
+                                        State1;
+                                    {error, {frame_loss, Src, PGN, Order, _PrevIndex}, State1} ->
+                                        frame_lost(Src, PGN, Order, ETab, Cnts),
+                                        State1;
+                                    {error, Error, State1} ->
+                                        io:format(
+                                            standard_error,
+                                            n2k:fmt_error(Error),
+                                            []
+                                        ),
+                                        State1
+                                end;
+                            (SrvRec, State0) when InFmt == can ->
+                                Str = n2k_can:fmt_service_record(SrvRec),
+                                WriteF(Str),
+                                State0
+                        end,
+                        n2k:decode_nmea_init()
+                    };
                 devices ->
-                    {fun({_, {_, PGN, Src, _}, _} = Frame, {State0, X, Y, Z})
-                           when PGN == 60928 orelse
-                                PGN == 126996 orelse
-                                PGN == 126998 ->
-                             case n2k:decode_nmea(Frame, State0) of
-                                 {true, Msg, State1} when PGN == 60928 ->
-                                     case lists:keymember(Src, 1, X) of
-                                         false ->
-                                             {State1, [{Src, Msg} | X], Y, Z};
-                                         true ->
-                                             {State1, X, Y, Z}
-                                     end;
-                                 {true, Msg, State1} when PGN == 126996 ->
-                                     case lists:keymember(Src, 1, Y) of
-                                         false ->
-                                             {State1, X, [{Src, Msg} | Y], Z};
-                                         true ->
-                                             {State1, X, Y, Z}
-                                     end;
-                                 {true, Msg, State1} when PGN == 126998 ->
-                                     case lists:keymember(Src, 1, Z) of
-                                         false ->
-                                             {State1, X, Y, [{Src, Msg} | Z]};
-                                         true ->
-                                             {State1, X, Y, Z}
-                                     end;
-                                 {false, State1} ->
-                                     {State1, X, Y, Z};
-                                 {error, _, State1} ->
-                                     {State1, X, Y, Z}
-                             end;
-                        (eof, {_, X0, Y0, Z0}) ->
-                             X = lists:keysort(1, X0),
-                             Y = lists:keysort(1, Y0),
-                             Z = lists:keysort(1, Z0),
-                             Merged =
-                                 n2k_devices:merge_device_information(X, Y, Z),
-                             n2k_devices:print_devices(WriteF, Merged);
-                        (_, S) ->
-                             S
-                     end,
-                     {n2k:decode_nmea_init(), [], [], []}};
+                    {
+                        fun
+                            ({_, {_, PGN, Src, _}, _} = Frame, {State0, X, Y, Z}) when
+                                PGN == 60928 orelse
+                                    PGN == 126996 orelse
+                                    PGN == 126998
+                            ->
+                                case n2k:decode_nmea(Frame, State0) of
+                                    {true, Msg, State1} when PGN == 60928 ->
+                                        case lists:keymember(Src, 1, X) of
+                                            false ->
+                                                {State1, [{Src, Msg} | X], Y, Z};
+                                            true ->
+                                                {State1, X, Y, Z}
+                                        end;
+                                    {true, Msg, State1} when PGN == 126996 ->
+                                        case lists:keymember(Src, 1, Y) of
+                                            false ->
+                                                {State1, X, [{Src, Msg} | Y], Z};
+                                            true ->
+                                                {State1, X, Y, Z}
+                                        end;
+                                    {true, Msg, State1} when PGN == 126998 ->
+                                        case lists:keymember(Src, 1, Z) of
+                                            false ->
+                                                {State1, X, Y, [{Src, Msg} | Z]};
+                                            true ->
+                                                {State1, X, Y, Z}
+                                        end;
+                                    {false, State1} ->
+                                        {State1, X, Y, Z};
+                                    {error, _, State1} ->
+                                        {State1, X, Y, Z}
+                                end;
+                            (eof, {_, X0, Y0, Z0}) ->
+                                X = lists:keysort(1, X0),
+                                Y = lists:keysort(1, Y0),
+                                Z = lists:keysort(1, Z0),
+                                Merged =
+                                    n2k_devices:merge_device_information(X, Y, Z),
+                                n2k_devices:print_devices(WriteF, Merged);
+                            (_, S) ->
+                                S
+                        end,
+                        {n2k:decode_nmea_init(), [], [], []}
+                    };
                 errors ->
-                    {fun(Frame, State0) when element(2, Frame) /= 'service' ->
-                             case n2k:decode_nmea(Frame, State0) of
-                                 {true, _Message, State1} ->
-                                     counters:add(Cnts,
-                                                  ?CNT_MESSAGES,
-                                                  1),
-                                     State1;
-                                 {false, State1} ->
-                                     State1;
-                                 {error,
-                                  {frame_loss, Src, PGN, Order, _PrevIndex},
-                                  State1} ->
-                                     frame_lost(Src, PGN, Order, ETab, Cnts),
-                                     State1;
-                                 {error, Error, State1} ->
-                                     io:format(standard_error,
-                                               n2k:fmt_error(Error), []),
-                                     State1
-                             end;
-                        (_SrvRec, State0) when InFmt == can ->
-                             counters:add(Cnts,
-                                          ?CNT_MESSAGES,
-                                          1),
-                             State0
-                     end,
-                     n2k:decode_nmea_init()}
+                    {
+                        fun
+                            (Frame, State0) when element(2, Frame) /= 'service' ->
+                                case n2k:decode_nmea(Frame, State0) of
+                                    {true, _Message, State1} ->
+                                        counters:add(
+                                            Cnts,
+                                            ?CNT_MESSAGES,
+                                            1
+                                        ),
+                                        State1;
+                                    {false, State1} ->
+                                        State1;
+                                    {error, {frame_loss, Src, PGN, Order, _PrevIndex}, State1} ->
+                                        frame_lost(Src, PGN, Order, ETab, Cnts),
+                                        State1;
+                                    {error, Error, State1} ->
+                                        io:format(
+                                            standard_error,
+                                            n2k:fmt_error(Error),
+                                            []
+                                        ),
+                                        State1
+                                end;
+                            (_SrvRec, State0) when InFmt == can ->
+                                counters:add(
+                                    Cnts,
+                                    ?CNT_MESSAGES,
+                                    1
+                                ),
+                                State0
+                        end,
+                        n2k:decode_nmea_init()
+                    }
             end,
         {F, FInitState} =
-            if Expr /= undefined ->
+            if
+                Expr /= undefined ->
                     mk_expr_filter_fun(Expr, OutF, OutFInitState);
-               true ->
+                true ->
                     mk_filter_fun(SrcIds, PGNs, OutF, OutFInitState)
             end,
         try
@@ -262,19 +332,25 @@ do_convert(Env, CmdStack, Quiet, InFmt0, OutFmt, PStr,
                 _ ->
                     ok
             end,
-            if (not Quiet) andalso (OutFmt == pretty orelse OutFmt == errors) ->
+            if
+                (not Quiet) andalso (OutFmt == pretty orelse OutFmt == errors) ->
                     Msgs = counters:get(Cnts, ?CNT_MESSAGES),
-                    if Msgs > 0 ->
+                    if
+                        Msgs > 0 ->
                             FastPacketErrors =
                                 counters:get(Cnts, ?CNT_FAST_PACKET_ERRORS),
-                            io:format(standard_error,
-                                      "Fast packet errors: ~w / ~.4f%\n",
-                                      [FastPacketErrors,
-                                       FastPacketErrors / Msgs]);
-                       true ->
+                            io:format(
+                                standard_error,
+                                "Fast packet errors: ~w / ~.4f%\n",
+                                [
+                                    FastPacketErrors,
+                                    FastPacketErrors / Msgs
+                                ]
+                            );
+                        true ->
                             ok
                     end;
-               true ->
+                true ->
                     ok
             end
         after
@@ -300,32 +376,50 @@ do_convert(Env, CmdStack, Quiet, InFmt0, OutFmt, PStr,
                     _ ->
                         false
                 end,
-            if not IsEpipe ->
-                    io:format(standard_error, "** ~p\n  ~p\n",
-                              [_Error, StackTrace]),
+            if
+                not IsEpipe ->
+                    io:format(
+                        standard_error,
+                        "** ~p\n  ~p\n",
+                        [_Error, StackTrace]
+                    ),
                     halt(1);
-               true ->
+                true ->
                     halt(0)
             end
     end.
 
 cmd_request() ->
-    #{cmd => "request",
-      help => {doc,
-               [{p, "Interact with the NMEA 2000 network over TCP or UDP."}]},
-      opts => [#{long => "protocol",
-                 type => {enum, [tcp, udp]}, default => default_gw_proto()},
-               #{long => "address", default => default_gw_address(),
-                 help => "IP address or hostname of the NMEA 2000 gateway",
-                 cb => fun opt_address/3},
-               #{long => "port",
-                 type => int, default => 1457,
-                 help => "TCP port to connect to, or UDP port to listen to"}],
-      required_cmd => true,
-      cmds =>
-          [cmd_dump(),
-           cmd_get_devices(),
-           cmd_maretron_get_depth()]}.
+    #{
+        cmd => "request",
+        help => {doc, [{p, "Interact with the NMEA 2000 network over TCP or UDP."}]},
+        opts => [
+            #{
+                long => "protocol",
+                type => {enum, [tcp, udp]},
+                default => default_gw_proto()
+            },
+            #{
+                long => "address",
+                default => default_gw_address(),
+                help => "IP address or hostname of the NMEA 2000 gateway",
+                cb => fun opt_address/3
+            },
+            #{
+                long => "port",
+                type => int,
+                default => 1457,
+                help => "TCP port to connect to, or UDP port to listen to"
+            }
+        ],
+        required_cmd => true,
+        cmds =>
+            [
+                cmd_dump(),
+                cmd_get_devices(),
+                cmd_maretron_get_depth()
+            ]
+    }.
 
 default_gw_proto() ->
     case os:getenv("N2K_GW_PROTO") of
@@ -355,21 +449,31 @@ opt_address(_, #{address := Address0} = Opts, _) ->
     end.
 
 cmd_dump() ->
-    #{cmd => "dump",
-      help => {doc,
-               [{p, "Listen to NMEA 2000 over TCP or UDP and print matching"
-                    " frames or messages."}]},
-      opts => [opt_match(),
-               #{short => $f, long => "outfmt",
-                 type => {enum, [raw, pretty]},
-                 default => pretty}],
-      cb => fun do_dump/4}.
+    #{
+        cmd => "dump",
+        help =>
+            {doc, [
+                {p,
+                    "Listen to NMEA 2000 over TCP or UDP and print matching"
+                    " frames or messages."}
+            ]},
+        opts => [
+            opt_match(),
+            #{
+                short => $f,
+                long => "outfmt",
+                type => {enum, [raw, pretty]},
+                default => pretty
+            }
+        ],
+        cb => fun do_dump/4
+    }.
 
 -record(dump, {
-          n2k_state = n2k:decode_nmea_init()
-        , outfmt
-        , expr
-        }).
+    n2k_state = n2k:decode_nmea_init(),
+    outfmt,
+    expr
+}).
 
 do_dump(_Env, CmdStack, Expr, OutFmt) ->
     [ReqCmd | _] = CmdStack,
@@ -385,10 +489,8 @@ dump_raw_line(Line, S) ->
     #dump{n2k_state = N2kState0, outfmt = OutFmt, expr = Expr} = S,
     {Frame, _Dir} = n2k_raw:decode_raw(Line),
     {_Time, {_Pri, _PGN, _Src, _Dst}, _Data} = Frame,
-    case
-        Expr == undefined orelse eval(Expr, Frame)
-    of
-        true->
+    case Expr == undefined orelse eval(Expr, Frame) of
+        true ->
             case OutFmt of
                 raw ->
                     io:put_chars([Line, $\n]),
@@ -413,14 +515,25 @@ dump_raw_line(Line, S) ->
     end.
 
 cmd_get_devices() ->
-    #{cmd => "get-devices",
-      help => {doc,
-               [{p, "Request isoAddressClaim, productInformation, and "
+    #{
+        cmd => "get-devices",
+        help =>
+            {doc, [
+                {p,
+                    "Request isoAddressClaim, productInformation, and "
                     " configInformation messages "
-                    " from all devices and print the result."}]},
-      opts => [#{short => $t, long => "timeout",
-                 type => {int, [{0, unbounded}]}, default => 20000}],
-      cb => fun do_get_devices/3}.
+                    " from all devices and print the result."}
+            ]},
+        opts => [
+            #{
+                short => $t,
+                long => "timeout",
+                type => {int, [{0, unbounded}]},
+                default => 20000
+            }
+        ],
+        cb => fun do_get_devices/3
+    }.
 
 do_get_devices(_Env, CmdStack, Timeout) ->
     [ReqCmd | _] = CmdStack,
@@ -433,10 +546,17 @@ do_get_devices(_Env, CmdStack, Timeout) ->
     end.
 
 cmd_maretron_get_depth() ->
-    #{cmd => "maretron-get-depth",
-      opts => [#{short => $d, long => "device",
-                 type => int}],
-      cb => fun do_maretron_get_depth/3}.
+    #{
+        cmd => "maretron-get-depth",
+        opts => [
+            #{
+                short => $d,
+                long => "device",
+                type => int
+            }
+        ],
+        cb => fun do_maretron_get_depth/3
+    }.
 
 do_maretron_get_depth(_Env, CmdStack, Device) ->
     [ReqCmd | _] = CmdStack,
@@ -451,20 +571,18 @@ guess_format(FName) ->
     {ok, Fd} = file:open(FName, [read, raw, binary, read_ahead]),
     try
         case file:read(Fd, 16) of
-            {ok, <<_,_,16#ff,16#ff,16#ff,16#ff,
-                   $Y,$D,$V,$R,$\s,$v,$0,$4,_,_>>} ->
+            {ok, <<_, _, 16#ff, 16#ff, 16#ff, 16#ff, $Y, $D, $V, $R, $\s, $v, $0, $4, _, _>>} ->
                 dat;
-            {ok, <<_,_,_,_,16#ff,16#ff,16#ff,16#ff,
-                   $Y,$D,$V,$R,$\s,$v,$0,$5>>} ->
+            {ok, <<_, _, _, _, 16#ff, 16#ff, 16#ff, 16#ff, $Y, $D, $V, $R, $\s, $v, $0, $5>>} ->
                 can;
             _ ->
                 file:position(Fd, 0),
                 {ok, Line} = file:read_line(Fd),
-                case binary:split(Line, <<" ">>, [global,trim_all]) of
+                case binary:split(Line, <<" ">>, [global, trim_all]) of
                     [_TimeB, <<_DirCh>>, _CanIdB | _] ->
                         raw;
                     _ ->
-                        case binary:split(Line, <<",">>, [global,trim_all]) of
+                        case binary:split(Line, <<",">>, [global, trim_all]) of
                             [_TimeB, _PriB, _PGNB, _SrcB, _DstB, _SzB | _] ->
                                 csv;
                             _ ->
@@ -483,32 +601,39 @@ guess_format(FName) ->
 mk_filter_fun([], [], OutF, OutFInitState) ->
     {OutF, OutFInitState};
 mk_filter_fun(SrcIds, PGNs, OutF, OutFInitState) ->
-    {fun({_Time, {_Pri, PGN, Src, _}, _} = M, OutState) ->
-             case
-                 (PGNs == [] orelse lists:member(PGN, PGNs))
-                 andalso
-                 (SrcIds == [] orelse lists:member(Src, SrcIds))
-             of
-                 true ->
-                     OutF(M, OutState);
-                 false ->
-                     OutState
-             end;
-        (M, OutState) ->
-             OutF(M, OutState)
-     end, OutFInitState}.
+    {
+        fun
+            ({_Time, {_Pri, PGN, Src, _}, _} = M, OutState) ->
+                case
+                    (PGNs == [] orelse lists:member(PGN, PGNs)) andalso
+                        (SrcIds == [] orelse lists:member(Src, SrcIds))
+                of
+                    true ->
+                        OutF(M, OutState);
+                    false ->
+                        OutState
+                end;
+            (M, OutState) ->
+                OutF(M, OutState)
+        end,
+        OutFInitState
+    }.
 
 mk_expr_filter_fun(Expr, OutF, OutFInitState) ->
-    {fun({_Time, {_Pri, _PGN, _Src, _Dst}, _} = M, OutState) ->
-             case eval(Expr, M) of
-                 true ->
-                     OutF(M, OutState);
-                 false ->
-                     OutState
-             end;
-        (M, OutState) ->
-             OutF(M, OutState)
-     end, OutFInitState}.
+    {
+        fun
+            ({_Time, {_Pri, _PGN, _Src, _Dst}, _} = M, OutState) ->
+                case eval(Expr, M) of
+                    true ->
+                        OutF(M, OutState);
+                    false ->
+                        OutState
+                end;
+            (M, OutState) ->
+                OutF(M, OutState)
+        end,
+        OutFInitState
+    }.
 
 frame_lost(Src, PGN, Order, ETab, Cnts) ->
     case ets:lookup(ETab, {Src, PGN}) of
@@ -519,10 +644,11 @@ frame_lost(Src, PGN, Order, ETab, Cnts) ->
             ets:insert(ETab, {{Src, PGN}, Order})
     end.
 
--type expr() :: {'or', expr(), expr()}
-              | {'and', expr(), expr()}
-              | {'not', expr()}
-              | {'pgn' | 'src' | 'dst', integer()}.
+-type expr() ::
+    {'or', expr(), expr()}
+    | {'and', expr(), expr()}
+    | {'not', expr()}
+    | {'pgn' | 'src' | 'dst', integer()}.
 
 %% expr = "(" expr ")" /
 %%         expr sep boolean-operator sep expr /
@@ -592,11 +718,12 @@ factor(Str0) ->
             {Test, Str1}
     end.
 
-
--define(is_ws(X), (X == $\s orelse X == $\t orelse
-                   X == $\n orelse X == $\r)).
+-define(is_ws(X),
+    (X == $\s orelse X == $\t orelse
+        X == $\n orelse X == $\r)
+).
 -define(is_sep(X), (?is_ws(X) orelse (X) == $( orelse (X) == $))).
--define(is_int(X), ((X >= $0 andalso X =< $9))).
+-define(is_int(X), (X >= $0 andalso X =< $9)).
 
 get_tok(S0) ->
     S1 = skip_ws(S0),
@@ -648,7 +775,7 @@ eval(Expr, Frame) ->
         {'and', ExprL, ExprR} ->
             eval(ExprL, Frame) andalso eval(ExprR, Frame);
         {'not', ExprR} ->
-            not(eval(ExprR, Frame));
+            not (eval(ExprR, Frame));
         Test ->
             {_Time, {_Pri, PGN, Src, Dst}, _} = Frame,
             case Test of

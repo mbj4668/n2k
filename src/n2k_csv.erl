@@ -14,15 +14,18 @@
 -type line() :: string().
 
 -spec read_csv_file(FileName :: string()) ->
-          [n2k:frame()].
+    [n2k:frame()].
 read_csv_file(FName) ->
     lists:reverse(
-      read_csv_file(FName, fun(Frame, Acc) -> [Frame | Acc] end, [])).
+        read_csv_file(FName, fun(Frame, Acc) -> [Frame | Acc] end, [])
+    ).
 
--spec read_csv_file(FileName :: string(),
-                    fun((n2k:frame(), Acc0 :: term()) -> Acc1 :: term()),
-                    InitAcc :: term()) ->
-          Acc :: term().
+-spec read_csv_file(
+    FileName :: string(),
+    fun((n2k:frame(), Acc0 :: term()) -> Acc1 :: term()),
+    InitAcc :: term()
+) ->
+    Acc :: term().
 read_csv_file(FName, F, InitAcc) ->
     {ok, Fd} = file:open(FName, [read, raw, binary, read_ahead]),
     try
@@ -52,16 +55,15 @@ read_csv_fd(Fd, F, Acc) ->
 -spec decode_csv(Line :: binary()) -> n2k:frame().
 decode_csv(Line) ->
     [TimeB, PriB, PGNB, SrcB, DstB, _SzB | Ds] =
-        binary:split(Line, <<",">>, [global,trim_all]),
+        binary:split(Line, <<",">>, [global, trim_all]),
     case TimeB of
-        <<HrB:2/binary,$:,MinB:2/binary,$:,SecB:2/binary,$.,MsB:3/binary>> ->
+        <<HrB:2/binary, $:, MinB:2/binary, $:, SecB:2/binary, $., MsB:3/binary>> ->
             ok;
-        <<_YYYY:4/binary,$-,_MM:2/binary,$-,_DD:2/binary,_Sep,
-          HrB:2/binary,$:,MinB:2/binary,$:,SecB:2/binary,$.,MsB:3/binary,
-          _/binary>> ->
+        <<_YYYY:4/binary, $-, _MM:2/binary, $-, _DD:2/binary, _Sep, HrB:2/binary, $:, MinB:2/binary,
+            $:, SecB:2/binary, $., MsB:3/binary, _/binary>> ->
             ok;
-        <<_YYYY:4/binary,$-,_MM:2/binary,$-,_DD:2/binary,_Sep,
-          HrB:2/binary,$:,MinB:2/binary,$:,SecB:2/binary,_/binary>> ->
+        <<_YYYY:4/binary, $-, _MM:2/binary, $-, _DD:2/binary, _Sep, HrB:2/binary, $:, MinB:2/binary,
+            $:, SecB:2/binary, _/binary>> ->
             MsB = <<"0">>
     end,
     Hr = binary_to_integer(HrB),
@@ -73,16 +75,24 @@ decode_csv(Line) ->
     Src = binary_to_integer(SrcB),
     Dst = binary_to_integer(DstB),
     Data = list_to_binary([binary_to_integer(D, 16) || D <- Ds]),
-    Milliseconds = ((((Hr*60 + Min) * 60) + Sec) * 1000) + Ms,
+    Milliseconds = ((((Hr * 60 + Min) * 60) + Sec) * 1000) + Ms,
     {Milliseconds, {Pri, PGN, Src, Dst}, Data}.
 
 -spec encode_csv(n2k:frame()) -> line().
 encode_csv({Time, {Pri, PGN, Src, Dst}, Data}) ->
-    [n2k:fmt_ms_time(Time), $,,
-     integer_to_list(Pri), $,,
-     integer_to_list(PGN), $,,
-     integer_to_list(Src), $,,
-     integer_to_list(Dst), $,,
-     integer_to_list(size(Data)), $,,
-     n2k:fmt_hex(Data, $,),
-     $\n].
+    [
+        n2k:fmt_ms_time(Time),
+        $,,
+        integer_to_list(Pri),
+        $,,
+        integer_to_list(PGN),
+        $,,
+        integer_to_list(Src),
+        $,,
+        integer_to_list(Dst),
+        $,,
+        integer_to_list(size(Data)),
+        $,,
+        n2k:fmt_hex(Data, $,),
+        $\n
+    ].

@@ -14,10 +14,11 @@
 %% If the decode/1 function returned fields that were not present in the XML
 %% defintion, the format_val/4 function is required.  It should format the
 %% given field's value as a human readable string.
--callback format_val(PGNName :: atom(),
-                     FieldName :: atom(),
-                     Val :: term(),
-                     Fields :: [{FieldName :: atom(), Val :: term()}]) ->
+-callback format_val(
+    PGNName :: atom(),
+    FieldName :: atom(),
+    Val :: term(),
+    Fields :: [{FieldName :: atom(), Val :: term()}]
+) ->
     io_lib:chars().
 -optional_callbacks([format_val/4]).
-

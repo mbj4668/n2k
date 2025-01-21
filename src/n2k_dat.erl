@@ -17,29 +17,35 @@
 -type dat_record() :: dat_service_record() | raw_message().
 
 -type dat_service_record() ::
-        {
-          Time :: integer() % milliseconds
-        , 'service'
-        , Data :: binary()
-        }.
+    {
+        % milliseconds
+        Time :: integer(),
+        'service',
+        Data :: binary()
+    }.
 
 -type raw_message() ::
-        {
-          Time :: integer() % milliseconds
-        , Id   :: n2k:canid()
-        , Data :: binary() % can be decoded w/ n2k_pgn:decode/2
-        }.
+    {
+        % milliseconds
+        Time :: integer(),
+        Id :: n2k:canid(),
+        % can be decoded w/ n2k_pgn:decode/2
+        Data :: binary()
+    }.
 
 -spec read_dat_file(FileName :: string()) ->
-          [dat_record()].
+    [dat_record()].
 read_dat_file(FName) ->
     lists:reverse(
-      read_dat_file(FName, fun(Record, Acc) -> [Record | Acc] end, [])).
+        read_dat_file(FName, fun(Record, Acc) -> [Record | Acc] end, [])
+    ).
 
--spec read_dat_file(FileName :: string(),
-                    fun((dat_record(), Acc0 :: term()) -> Acc1 :: term()),
-                    InitAcc :: term()) ->
-          Acc :: term().
+-spec read_dat_file(
+    FileName :: string(),
+    fun((dat_record(), Acc0 :: term()) -> Acc1 :: term()),
+    InitAcc :: term()
+) ->
+    Acc :: term().
 read_dat_file(FName, F, InitAcc) ->
     {ok, Fd} = file:open(FName, [read, raw, binary, read_ahead]),
     try
@@ -57,9 +63,10 @@ read_dat_fd(Fd, F, Acc) ->
         {ok, <<Time:16/little, CanId:32/little>>} ->
             Id = n2k:decode_canid(CanId),
             {_Pri, PGN, _Src, _Dst} = Id,
-            if PGN == 59904 ->
+            if
+                PGN == 59904 ->
                     {ok, Data} = file:read(Fd, 3);
-               true ->
+                true ->
                     case catch n2k_pgn:is_fast(PGN) of
                         true ->
                             {ok, <<_Seq:8, Len:8>>} = file:read(Fd, 2),
@@ -77,11 +84,11 @@ read_dat_fd(Fd, F, Acc) ->
 fmt_service_record({Time, 'service', Data}) ->
     Str =
         case Data of
-            <<$Y,$D,$V,$R,$\s,$v,$0,$4>> ->
+            <<$Y, $D, $V, $R, $\s, $v, $0, $4>> ->
                 binary_to_list(Data);
-            <<$E,_/binary>> ->
+            <<$E, _/binary>> ->
                 "last record";
-            <<$T,_/binary>> ->
+            <<$T, _/binary>> ->
                 "1 minute silence";
             _ ->
                 "unknown"

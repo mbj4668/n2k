@@ -20,15 +20,18 @@
 -type dir() :: 'rx' | 'tx'.
 
 -spec read_raw_file(FileName :: string()) ->
-          [n2k:frame()].
+    [n2k:frame()].
 read_raw_file(FName) ->
     lists:reverse(
-      read_raw_file(FName, fun(Frame, Acc) -> [Frame | Acc] end, [])).
+        read_raw_file(FName, fun(Frame, Acc) -> [Frame | Acc] end, [])
+    ).
 
--spec read_raw_file(FileName :: string(),
-                    fun((n2k:frame(), Acc0 :: term()) -> Acc1 :: term()),
-                    InitAcc :: term()) ->
-          Acc :: term().
+-spec read_raw_file(
+    FileName :: string(),
+    fun((n2k:frame(), Acc0 :: term()) -> Acc1 :: term()),
+    InitAcc :: term()
+) ->
+    Acc :: term().
 read_raw_file(FName, F, InitAcc) ->
     {ok, Fd} = file:open(FName, [read, raw, binary, read_ahead]),
     try
@@ -58,24 +61,24 @@ decode_raw(Line0) ->
             $\n ->
                 Sz = byte_size(Line0),
                 Last =
-                    case binary:at(Line0, Sz-2) of
+                    case binary:at(Line0, Sz - 2) of
                         $\r ->
-                            Sz-2;
+                            Sz - 2;
                         _ ->
-                            Sz-1
+                            Sz - 1
                     end,
                 binary:part(Line0, 0, Last);
             _ ->
                 Line0
         end,
-    case binary:split(Line, <<" ">>, [global,trim_all]) of
+    case binary:split(Line, <<" ">>, [global, trim_all]) of
         [TimeB, <<DirCh>>, CanIdB | Ds] ->
             ok;
         [CanIdB | Ds] ->
             TimeB = <<"00:00:00.000">>,
             DirCh = $R
     end,
-    <<HrB:2/binary,$:,MinB:2/binary,$:,SecB:2/binary,$.,MsB:3/binary>> = TimeB,
+    <<HrB:2/binary, $:, MinB:2/binary, $:, SecB:2/binary, $., MsB:3/binary>> = TimeB,
     Hr = binary_to_integer(HrB),
     Min = binary_to_integer(MinB),
     Sec = binary_to_integer(SecB),
@@ -84,7 +87,7 @@ decode_raw(Line0) ->
     CanId = binary_to_integer(CanIdB, 16),
     Data = list_to_binary([binary_to_integer(D, 16) || D <- Ds]),
     Id = n2k:decode_canid(CanId),
-    Milliseconds = ((((Hr*60 + Min) * 60) + Sec) * 1000) + Ms,
+    Milliseconds = ((((Hr * 60 + Min) * 60) + Sec) * 1000) + Ms,
     {{Milliseconds, Id, Data}, Dir}.
 
 decode_raw_dir($\R) -> rx;
@@ -92,22 +95,42 @@ decode_raw_dir($\T) -> tx.
 
 -spec encode_raw({n2k:frame(), dir()}) -> line().
 encode_raw({{Time, CanId, Data}, Dir}) ->
-    [n2k:fmt_ms_time(Time), $\s, fmt_raw_dir(Dir), $\s,
-     fmt_raw_canid(CanId), $\s, fmt_raw_data(Data),
-     $\r, $\n].
+    [
+        n2k:fmt_ms_time(Time),
+        $\s,
+        fmt_raw_dir(Dir),
+        $\s,
+        fmt_raw_canid(CanId),
+        $\s,
+        fmt_raw_data(Data),
+        $\r,
+        $\n
+    ].
 
 -spec encode_raw_line({n2k:frame(), dir()}) -> line().
 encode_raw_line({{Time, CanId, Data}, Dir}) ->
-    [n2k:fmt_ms_time(Time), $\s, fmt_raw_dir(Dir), $\s,
-     fmt_raw_canid(CanId), $\s, fmt_raw_data(Data)].
+    [
+        n2k:fmt_ms_time(Time),
+        $\s,
+        fmt_raw_dir(Dir),
+        $\s,
+        fmt_raw_canid(CanId),
+        $\s,
+        fmt_raw_data(Data)
+    ].
 
 -spec encode_raw_frame(n2k:canid(), binary()) -> line().
 %% This line can be sent to a yacht device's gw.  Note that
 %% the src in the canid doens't matter; the gw will replace it with
 %% its own src.
 encode_raw_frame(CanId, Data) ->
-    [fmt_raw_canid(CanId), $\s, fmt_raw_data(Data),
-     $\r, $\n].
+    [
+        fmt_raw_canid(CanId),
+        $\s,
+        fmt_raw_data(Data),
+        $\r,
+        $\n
+    ].
 
 fmt_raw_dir(rx) -> $R;
 fmt_raw_dir(tx) -> $T.
@@ -115,7 +138,7 @@ fmt_raw_dir(tx) -> $T.
 fmt_raw_canid(CanId) when is_tuple(CanId) ->
     fmt_raw_canid(n2k:encode_canid(CanId));
 fmt_raw_canid(CanId) ->
-    n2k:fmt_hex(<<0:3,CanId:29>>, []).
+    n2k:fmt_hex(<<0:3, CanId:29>>, []).
 
 fmt_raw_data(Data) ->
     n2k:fmt_hex(Data, $\s).

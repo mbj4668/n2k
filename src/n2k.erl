@@ -13,43 +13,48 @@
 
 %% A CANID is a 29-bit number.  When decoded, it is a canid().
 -type canid() ::
-        {
-          Pri :: integer() % 3 bits
-        , PGN :: integer()
-        , Src :: byte() % src device of message
-        , Dst :: byte() % dst device of message, 16#ff means all
-        }.
+    {
+        % 3 bits
+        Pri :: integer(),
+        PGN :: integer(),
+        % src device of message
+        Src :: byte(),
+        % dst device of message, 16#ff means all
+        Dst :: byte()
+    }.
 
 %% Represents one CAN frame, with additional meta data (time)
 -type frame() ::
-        {
-          Time :: integer() % milliseconds
-        , Id   :: canid()
-        , Data :: binary() % 0-8 bytes
-        }.
+    {
+        % milliseconds
+        Time :: integer(),
+        Id :: canid(),
+        % 0-8 bytes
+        Data :: binary()
+    }.
 
 %% Represents one NMEA message, with additional meta data (time)
 -type message() ::
-        {
-          Time :: integer() % milliseconds
-        , Id   :: canid()
-        , Data :: data()
-        }.
+    {
+        % milliseconds
+        Time :: integer(),
+        Id :: canid(),
+        Data :: data()
+    }.
 
 -type data() ::
-        {
-          PGNName :: atom()
-        , Fields :: [{FieldName :: atom(), Val :: term()}]
-        }.
+    {
+        PGNName :: atom(),
+        Fields :: [{FieldName :: atom(), Val :: term()}]
+    }.
 
 -type dec_error() ::
-        %% the (generated) pgn decode function failed to decode the
-        %% message
-        {pgn_decode_error, Src :: byte(), PGN :: integer()}
-        %% a fast packet frame was received but the previous frame was
-        %% not found
-      | {frame_loss, Src :: byte(), PGN :: integer(),
-                     Order :: integer(), PrevIndex :: integer()}.
+    %% the (generated) pgn decode function failed to decode the
+    %% message
+    {pgn_decode_error, Src :: byte(), PGN :: integer()}
+    %% a fast packet frame was received but the previous frame was
+    %% not found
+    | {frame_loss, Src :: byte(), PGN :: integer(), Order :: integer(), PrevIndex :: integer()}.
 
 -opaque dec_state() :: map().
 
@@ -59,9 +64,9 @@ decode_nmea_init() ->
     #{}.
 
 -spec decode_nmea(n2k:frame(), dec_state()) ->
-          {true, n2k:message(), dec_state()}
-        | {false, dec_state()}
-        | {error, dec_error(), dec_state()}.
+    {true, n2k:message(), dec_state()}
+    | {false, dec_state()}
+    | {error, dec_error(), dec_state()}.
 %% Call this repeatedly with frames and a decode state.
 %% When a message has been assembled, {true, Message, State1} is
 %% returned.
@@ -75,20 +80,21 @@ decode_nmea(Frame, Map0) ->
         false ->
             Message = {Time, Id, n2k_pgn:decode(PGN, Data)},
             {true, Message, Map0};
-        true when byte_size(Data) > 8 -> % complete message
+        % complete message
+        true when byte_size(Data) > 8 ->
             Message = {Time, Id, n2k_pgn:decode(PGN, Data)},
             {true, Message, Map0};
         true ->
             case Data of
-                <<Order:3,0:5,PLen,PayLoad/binary>> ->
+                <<Order:3, 0:5, PLen, PayLoad/binary>> ->
                     %% this is the first of the fast messages, store
                     %% for assembly
-                    P = {Order, _Index = 0, PLen-byte_size(PayLoad), [PayLoad]},
+                    P = {Order, _Index = 0, PLen - byte_size(PayLoad), [PayLoad]},
                     Map1 = maps:put({Src, PGN}, P, Map0),
                     {false, Map1};
-                <<Order:3,Index:5,PayLoad/binary>> ->
-                    PrevIndex = Index-1,
-                    case maps:find({Src,PGN}, Map0) of
+                <<Order:3, Index:5, PayLoad/binary>> ->
+                    PrevIndex = Index - 1,
+                    case maps:find({Src, PGN}, Map0) of
                         {ok, {Order, PrevIndex, PLen0, Data0}} ->
                             Data1 = [PayLoad | Data0],
                             case PLen0 - byte_size(PayLoad) of
@@ -102,60 +108,63 @@ decode_nmea(Frame, Map0) ->
                                         list_to_binary(lists:reverse(Data1)),
                                     Map1 = maps:remove({Src, PGN}, Map0),
                                     try
-                                        Message = {Time, Id,
-                                                   n2k_pgn:decode(PGN, Data2)},
+                                        Message = {Time, Id, n2k_pgn:decode(PGN, Data2)},
                                         {true, Message, Map1}
                                     catch
                                         _:_X:Stacktrace ->
-                                            io:format("** error: ~p ~p\n",
-                                                      [_X, Stacktrace]),
-                                            {error,
-                                             {pgn_decode_error, Src, PGN}, Map1}
+                                            io:format(
+                                                "** error: ~p ~p\n",
+                                                [_X, Stacktrace]
+                                            ),
+                                            {error, {pgn_decode_error, Src, PGN}, Map1}
                                     end
                             end;
                         _ ->
-                            {error, {frame_loss, Src, PGN, Order, PrevIndex},
-                             Map0}
+                            {error, {frame_loss, Src, PGN, Order, PrevIndex}, Map0}
                     end
             end
-%        unknown ->
-%            Message = {Time, Id,
-%                      {unknown, [{unknown, binary_to_list(Data)}]}},
-%            {true, Message, Map0}
+        %        unknown ->
+        %            Message = {Time, Id,
+        %                      {unknown, [{unknown, binary_to_list(Data)}]}},
+        %            {true, Message, Map0}
     end.
 
 -spec fmt_error(dec_error()) -> io_lib:chars().
 fmt_error({frame_loss, Src, PGN, Order, PrevIndex}) ->
-    io_lib:format("warning: pgn ~w:~w, order ~w, frame lost ~w\n",
-                  [Src, PGN, Order, PrevIndex]);
+    io_lib:format(
+        "warning: pgn ~w:~w, order ~w, frame lost ~w\n",
+        [Src, PGN, Order, PrevIndex]
+    );
 fmt_error({pgn_decode_error, Src, PGN}) ->
-    io_lib:format("warning: pgn ~w:~w, could not decode\n", [Src,PGN]).
+    io_lib:format("warning: pgn ~w:~w, could not decode\n", [Src, PGN]).
 
--define(R1, 0). % Reserved bit in CAN header. Always 0 in NMEA2000.
+% Reserved bit in CAN header. Always 0 in NMEA2000.
+-define(R1, 0).
 
 -spec encode_canid(canid()) -> integer().
-encode_canid({Pri,PGN,Src,Dst}) ->
+encode_canid({Pri, PGN, Src, Dst}) ->
     PF = (PGN bsr 8) band 16#ff,
-    if PF < 240 ->
+    if
+        PF < 240 ->
             %% PDU 1 - destination addressable
-            <<ID:29>> = <<Pri:3,?R1:1,(PGN bsr 8):9,Dst:8,Src:8>>,
+            <<ID:29>> = <<Pri:3, ?R1:1, (PGN bsr 8):9, Dst:8, Src:8>>,
             ID;
-       true ->
+        true ->
             %% PDU 2 - destination global
-            <<ID:29>> = <<Pri:3,?R1:1,PGN:17,Src:8>>,
+            <<ID:29>> = <<Pri:3, ?R1:1, PGN:17, Src:8>>,
             ID
     end.
 
 -spec decode_canid(integer()) -> canid().
 decode_canid(CanId) ->
     case <<CanId:29>> of
-        <<Pri:3,_R1:1,DP:1,PF:8,Dst:8,Src:8>> when PF < 240 ->
+        <<Pri:3, _R1:1, DP:1, PF:8, Dst:8, Src:8>> when PF < 240 ->
             %% PDU 1 - destination addressable
             PGN = (DP bsl 16) + (PF bsl 8),
-            {Pri,PGN,Src,Dst};
-        <<Pri:3,_R1:1,PGN:17,Src:8>> ->
+            {Pri, PGN, Src, Dst};
+        <<Pri:3, _R1:1, PGN:17, Src:8>> ->
             %% PDU 2 - destination global
-            {Pri,PGN,Src,16#ff}
+            {Pri, PGN, Src, 16#ff}
     end.
 
 %% string_fixed is N2K type DF63
@@ -178,13 +187,15 @@ decode_string_fixed(Bin) ->
             Bin
     end.
 
--define(CTRL_UNICODE, 0). % UTF-16
--define(CTRL_ASCII, 1). % actually, latin-1
+% UTF-16
+-define(CTRL_UNICODE, 0).
+% actually, latin-1
+-define(CTRL_ASCII, 1).
 
 %% string_variable is N2K type DF50/DF51
-decode_string_variable(<<?CTRL_ASCII,Str/binary>>) ->
+decode_string_variable(<<?CTRL_ASCII, Str/binary>>) ->
     Str;
-decode_string_variable(<<?CTRL_UNICODE,Str/binary>>) ->
+decode_string_variable(<<?CTRL_UNICODE, Str/binary>>) ->
     unicode:characters_to_binary(Str, {utf16, little}, utf8);
 decode_string_variable(Bin) ->
     Bin.
@@ -193,16 +204,15 @@ encode_string_variable_short_ascii(Str) ->
     Len = byte_size(Str),
     <<Len, ?CTRL_ASCII, Str/binary>>.
 
-
 -spec encode_nmea_message(canid(), binary()) ->
-          {integer(), binary()}.
+    {integer(), binary()}.
 %% encode a message into a frame.
 encode_nmea_message(CanId, Data) ->
     CanIdInt = encode_canid(CanId),
     {CanIdInt, Data}.
 
 -spec encode_nmea_fast_message(canid(), binary(), integer()) ->
-          {integer(), [binary()]}.
+    {integer(), [binary()]}.
 %% encode a fast message into a list of frames
 %% Order is a integer (counter) 0..7
 encode_nmea_fast_message(CanId, Data, Order) ->
@@ -211,39 +221,50 @@ encode_nmea_fast_message(CanId, Data, Order) ->
 
 mk_fast_frames(Order, Payload) ->
     PLen = byte_size(Payload),
-    if PLen =< 6 ->
+    if
+        PLen =< 6 ->
             [<<Order:3, 0:5, PLen, Payload/binary>>];
-       true ->
+        true ->
             Data = binary_part(Payload, 0, 6),
-            [<<Order:3, 0:5, PLen, Data/binary>> |
-             mk_fast_frames(Order, 1, 6, PLen, Payload)]
+            [
+                <<Order:3, 0:5, PLen, Data/binary>>
+                | mk_fast_frames(Order, 1, 6, PLen, Payload)
+            ]
     end.
 
 mk_fast_frames(Order, Index, Pos, PLen, Payload) ->
-    if (Pos+7) >= PLen ->
+    if
+        (Pos + 7) >= PLen ->
             %% last frame
             Data = binary_part(Payload, Pos, (PLen - Pos)),
             [<<Order:3, Index:5, Data/binary>>];
         true ->
             Data = binary_part(Payload, Pos, 7),
-            [<<Order:3, Index:5, Data/binary>> |
-             mk_fast_frames(Order, Index+1, Pos+7, PLen, Payload)]
+            [
+                <<Order:3, Index:5, Data/binary>>
+                | mk_fast_frames(Order, Index + 1, Pos + 7, PLen, Payload)
+            ]
     end.
-
 
 -spec fmt_nmea_message(message(), boolean()) -> iodata().
 fmt_nmea_message({Time, {Pri, PGN, Src, Dst}, {MsgName, Fields}}, Pretty) ->
     Fs =
         try
             [fmt_field(MsgName, F, Fields, Pretty) || F <- Fields]
-        catch _:_X:S ->
+        catch
+            _:_X:S ->
                 io:format("**ERROR: ~p\n~p\n", [_X, S]),
                 [io_lib:format("** FIELDS: ~p", [Fields])]
         end,
-    [fmt_ms_time(Time),
-     io_lib:format(" ~w ~3w ~3w ~6w ~w:",
-                   [Pri, Src, Dst, PGN, MsgName]),
-     string:join(Fs, "; "), $\n].
+    [
+        fmt_ms_time(Time),
+        io_lib:format(
+            " ~w ~3w ~3w ~6w ~w:",
+            [Pri, Src, Dst, PGN, MsgName]
+        ),
+        string:join(Fs, "; "),
+        $\n
+    ].
 
 fmt_ms_time(Milliseconds) ->
     Ms = Milliseconds rem 1000,
@@ -253,27 +274,39 @@ fmt_ms_time(Milliseconds) ->
     Min = R1 rem 60,
     R2 = R1 div 60,
     Hr = R2 rem 24,
-    io_lib:format("~2.2.0w:~2.2.0w:~2.2.0w.~3.3.0w",
-                  [Hr, Min, Sec, Ms]).
+    io_lib:format(
+        "~2.2.0w:~2.2.0w:~2.2.0w.~3.3.0w",
+        [Hr, Min, Sec, Ms]
+    ).
 
-fmt_date({Y,M,D}) ->
-    io_lib:format("~4.4.0w-~2.2.0w-~2.2.0w",
-                  [Y,M,D]).
+fmt_date({Y, M, D}) ->
+    io_lib:format(
+        "~4.4.0w-~2.2.0w-~2.2.0w",
+        [Y, M, D]
+    ).
 
 fmt_time(VInt, Decimals) ->
     V = integer_to_list(VInt),
     try
         MsStr =
-            if Decimals > 0 ->
-                    [ $. | lists:sublist(V, length(V) - (Decimals - 1),
-                                         Decimals)];
-               true ->
+            if
+                Decimals > 0 ->
+                    [
+                        $.
+                        | lists:sublist(
+                            V,
+                            length(V) - (Decimals - 1),
+                            Decimals
+                        )
+                    ];
+                true ->
                     ""
             end,
         SStr =
-            if Decimals > 0 ->
+            if
+                Decimals > 0 ->
                     lists:sublist(V, length(V) - Decimals);
-               true ->
+                true ->
                     V
             end,
         S = list_to_integer(SStr),
@@ -282,20 +315,22 @@ fmt_time(VInt, Decimals) ->
         Min = R1 rem 60,
         R2 = R1 div 60,
         Hr = R2 rem 24,
-        io_lib:format("~2.2.0w:~2.2.0w:~2.2.0w~s",
-                      [Hr, Min, Sec, MsStr])
+        io_lib:format(
+            "~2.2.0w:~2.2.0w:~2.2.0w~s",
+            [Hr, Min, Sec, MsStr]
+        )
     catch
         _:_ ->
             V
     end.
 
 fmt_hex(<<X>>, _) ->
-    [hex(X bsr 4),hex(X)];
-fmt_hex(<<X,Bin/binary>>, Separator) ->
-    [hex(X bsr 4),hex(X),Separator | fmt_hex(Bin, Separator)].
+    [hex(X bsr 4), hex(X)];
+fmt_hex(<<X, Bin/binary>>, Separator) ->
+    [hex(X bsr 4), hex(X), Separator | fmt_hex(Bin, Separator)].
 
 hex(X) ->
-    element((X band 15)+1, {$0,$1,$2,$3,$4,$5,$6,$7,$8,$9,$A,$B,$C,$D,$E,$F}).
+    element((X band 15) + 1, {$0, $1, $2, $3, $4, $5, $6, $7, $8, $9, $A, $B, $C, $D, $E, $F}).
 
 fmt_field(MsgName, {Name, Val}, Fields, Pretty) ->
     [atom_to_list(Name), " = ", fmt_val(MsgName, Name, Val, Fields, Pretty)].
@@ -309,30 +344,43 @@ fmt_val(MsgName, Name, Val, Fields, Pretty) ->
                 d ->
                     Date =
                         calendar:gregorian_days_to_date(
-                          calendar:date_to_gregorian_days({1970,1,1}) + Val),
+                            calendar:date_to_gregorian_days({1970, 1, 1}) + Val
+                        ),
                     fmt_date(Date);
                 s ->
                     fmt_time(Val, Decimals);
                 'K' when Decimals == 2 ->
                     ValC = Val - 27315,
-                    [io_lib:format("~.*f", [Decimals, ValC*Resolution]),
-                     " C"];
+                    [
+                        io_lib:format("~.*f", [Decimals, ValC * Resolution]),
+                        " C"
+                    ];
                 'Pa' when Decimals == -2 ->
                     ValBar = Val / 1000,
-                    [io_lib:format("~.3f", [ValBar]),
-                     " bar"];
+                    [
+                        io_lib:format("~.3f", [ValBar]),
+                        " bar"
+                    ];
                 rad ->
-                    io_lib:format("~.1f deg",
-                                  [Val*Resolution * 180 / math:pi()]);
+                    io_lib:format(
+                        "~.1f deg",
+                        [Val * Resolution * 180 / math:pi()]
+                    );
                 'rad/s' ->
-                    io_lib:format("~.1f deg/s",
-                                  [Val*Resolution * 180 / math:pi()]);
+                    io_lib:format(
+                        "~.1f deg/s",
+                        [Val * Resolution * 180 / math:pi()]
+                    );
                 _ when Decimals /= undefined, Decimals > 0 ->
-                    [io_lib:format("~.*f", [Decimals, Val*Resolution]),
-                     fmt_units(Units)];
+                    [
+                        io_lib:format("~.*f", [Decimals, Val * Resolution]),
+                        fmt_units(Units)
+                    ];
                 _ when Decimals /= undefined, Decimals < 0 ->
-                    [io_lib:format("~p", [Val*Resolution]),
-                     fmt_units(Units)];
+                    [
+                        io_lib:format("~p", [Val * Resolution]),
+                        fmt_units(Units)
+                    ];
                 _ ->
                     [io_lib:format("~p", [Val]), fmt_units(Units)]
             end;
@@ -385,27 +433,33 @@ fmt_units(undefined) ->
 fmt_units(Units) ->
     [$\s | atom_to_list(Units)].
 
--define(is_pr(Ch), ((Ch) == 32
-                    orelse ((Ch) >= 48 andalso (Ch) =< 57)
-                    orelse ((Ch) >= 65 andalso (Ch) =< 122))
-       ).
--define(tr(Ch), if (Ch) == 32 -> $.; true -> Ch end).
+-define(is_pr(Ch),
+    ((Ch) == 32 orelse
+        ((Ch) >= 48 andalso (Ch) =< 57) orelse
+        ((Ch) >= 65 andalso (Ch) =< 122))
+).
+-define(tr(Ch),
+    if
+        (Ch) == 32 -> $.;
+        true -> Ch
+    end
+).
 
 pr(<<>>) ->
     "<<>>";
 pr(Bin) ->
     ["<<", pr0(Bin), ">>"].
 
-pr0(<<A,B,C,Rest/binary>>) when ?is_pr(A), ?is_pr(B), ?is_pr(C) ->
-    [$",?tr(A),?tr(B),?tr(C) | pr1(Rest)];
+pr0(<<A, B, C, Rest/binary>>) when ?is_pr(A), ?is_pr(B), ?is_pr(C) ->
+    [$", ?tr(A), ?tr(B), ?tr(C) | pr1(Rest)];
 pr0(<<A>>) ->
     [integer_to_list(A)];
-pr0(<<A,Rest/binary>>) ->
+pr0(<<A, Rest/binary>>) ->
     [integer_to_list(A), $, | pr0(Rest)].
 
 pr1(<<A>>) when ?is_pr(A) ->
     [?tr(A), $"];
-pr1(<<A,Rest/binary>>) when ?is_pr(A) ->
+pr1(<<A, Rest/binary>>) when ?is_pr(A) ->
     [?tr(A) | pr1(Rest)];
 pr1(Bin) ->
     [$", $, | pr0(Bin)].
