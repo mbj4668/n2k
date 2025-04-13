@@ -120,9 +120,8 @@ encode_raw_line({{Time, CanId, Data}, Dir}) ->
     ].
 
 -spec encode_raw_frame(n2k:canid(), binary()) -> line().
-%% This line can be sent to a yacht device's gw.  Note that
-%% the src in the canid doens't matter; the gw will replace it with
-%% its own src.
+%% This line can be sent to a yacht device's gw.  Note that the src in the canid
+%% doesn't matter; the gw will replace it with its own src.
 encode_raw_frame(CanId, Data) ->
     [
         fmt_raw_canid(CanId),
