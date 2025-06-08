@@ -409,7 +409,12 @@ cmd_request() ->
                 long => "port",
                 type => int,
                 default => 1457,
-                help => "TCP port to connect to, or UDP port to listen to"
+                help => "TCP port to connect to, or UDP port to send and listen to"
+            },
+            #{
+                long => "lport",
+                type => int,
+                help => "UDP port to listen to (default same as port)"
             }
         ],
         required_cmd => true,
@@ -480,7 +485,8 @@ do_dump(_Env, CmdStack, Expr, OutFmt) ->
     {_Cmd, Opts} = ReqCmd,
     #{protocol := Proto, address := Address, port := Port} = Opts,
     io:format("Connecting to ~p\n", [Address]),
-    {ok, R} = n2k_request:init_request(Proto, Address, Port),
+    LPort = maps:get(lport, Opts, Port),
+    {ok, R} = n2k_request:init_request(Proto, Address, Port, LPort),
     S = #dump{outfmt = OutFmt, expr = Expr},
     n2k_request:loop(R, fun dump_raw_line/2, S).
 
