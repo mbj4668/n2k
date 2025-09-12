@@ -3,7 +3,6 @@
 %%% Reads 'raw', 'csv', 'dat' and 'can' files, and converts
 %%% to 'csv' or pretty text.
 -module(n2k_script).
--include("n2k_request.hrl").
 
 -export([main/1]).
 -export([parse_expr/1]).
@@ -417,7 +416,7 @@ cmd_request() ->
             [
                 cmd_dump(),
                 cmd_get_devices(),
-                cmd_maretron_get_depth()
+                cmd_maretron()
             ]
     }.
 
@@ -478,14 +477,16 @@ cmd_dump() ->
 do_dump(_Env, CmdStack, Expr, OutFmt) ->
     [ReqCmd | _] = CmdStack,
     {_Cmd, Opts} = ReqCmd,
-    #{protocol := Proto, address := Address, port := Port} = Opts,
-    io:format("Connecting to ~p\n", [Address]),
-    {ok, R} = n2k_request:init_request(Proto, Address, Port),
     S = #dump{outfmt = OutFmt, expr = Expr},
-    n2k_request:loop(R, fun dump_raw_line/2, S).
+    do_n2k_request(Opts, do_dump_fun(S)).
+
+do_dump_fun(S) ->
+    fun(Transport) ->
+        n2k_transport:recv(Transport, binary, fun dump_raw_line/2, S)
+    end.
 
 %% Line is unparsed bytes; one line of RAW format.
-dump_raw_line(Line, S) ->
+dump_raw_line({binary, Line}, S) ->
     #dump{n2k_state = N2kState0, outfmt = OutFmt, expr = Expr} = S,
     {Frame, _Dir} = n2k_raw:decode_raw(Line),
     {_Time, {_Pri, _PGN, _Src, _Dst}, _Data} = Frame,
@@ -538,33 +539,245 @@ cmd_get_devices() ->
 do_get_devices(_Env, CmdStack, Timeout) ->
     [ReqCmd | _] = CmdStack,
     {_Cmd, Opts} = ReqCmd,
-    #{protocol := Proto, address := Address, port := Port} = Opts,
-    case n2k_devices:get_devices(Proto, Address, Port, Timeout) of
-        {ok, Res} ->
-            n2k_devices:print_devices(fun io:put_chars/1, Res),
-            halt(0)
+    do_n2k_request(Opts, do_get_devices_fun(Timeout)).
+
+do_get_devices_fun(Timeout) ->
+    fun(Transport) ->
+        {ok, Res} = n2k_devices:get_devices(Transport, Timeout),
+        n2k_devices:print_devices(fun io:put_chars/1, Res)
     end.
+
+cmd_maretron() ->
+    #{
+        cmd => "maretron",
+        help => {doc, [{p, "Maretron-specific commands."}]},
+        required_cmd => true,
+        cmds =>
+            [
+                cmd_maretron_compass(),
+                cmd_maretron_tank_meter()
+            ]
+    }.
+
+cmd_maretron_compass() ->
+    #{
+        cmd => "compass",
+        help => {doc, [{p, "Maretron compass-specific commands."}]},
+        required_cmd => true,
+        cmds =>
+            [
+                cmd_maretron_compass_calibrate_deviation(),
+                cmd_maretron_compass_get_last_calibration_status(),
+                cmd_maretron_compass_start_rate_of_turn_zeroing(),
+                cmd_maretron_compass_cancel_rate_of_turn_zeroing(),
+                cmd_maretron_compass_set_rate_of_turn_dampening()
+            ]
+    }.
+
+cmd_maretron_compass_calibrate_deviation() ->
+    #{
+        cmd => "calibrate-deviation",
+        opts => [device_opt()],
+        help =>
+            {doc, [
+                {p, "Start the deviation calibration procedure."},
+                {ul, "Perform these steps:", [
+                    "Warm up the compass by operating it for approximately 10 minutes.",
+                    "Turn the vessel (either direction) such that you complete a full 360° turn"
+                    " in 2 1/2 minutes orless (try not to go below 1 minute for a complete circle)"
+                ]},
+                {p,
+                    "This command reports status, and returns when calibration has succeeded"
+                    " or failed."}
+            ]},
+
+        cb => fun do_maretron_compass_calibrate_deviation/3
+    }.
+
+do_maretron_compass_calibrate_deviation(_Env, CmdStack, Device) ->
+    [_Compass, _Maretron, {_Cmd, Opts} | _] = CmdStack,
+    do_n2k_request(Opts, do_maretron_compass_calibrate_deviation_fun(Device)).
+
+do_maretron_compass_calibrate_deviation_fun(Device) ->
+    fun(Transport) ->
+        n2k_maretron:compass_start_calibration(Transport, Device),
+        case
+            n2k_maretron:compass_recv_calibration_status(
+                Transport, fun maretron_compass_calibration_status/1
+            )
+        of
+            ok ->
+                halt(0);
+            error ->
+                halt(1)
+        end
+    end.
+
+maretron_compass_calibration_status(Res) ->
+    case Res of
+        {status, Status} ->
+            {enums, Enums} = n2k_pgns:type_info(maretronDeviationCalibrationStatus, status),
+            case lists:keyfind(Status, 2, Enums) of
+                {Str, _} ->
+                    io:format("Calibration status: ~s\n", [Str]);
+                _ ->
+                    io:format("Calibration status: ~p\n", [Status])
+            end;
+        {error, {pgnErrorCode, PGNErrorCode}} ->
+            io:format("Calibration request failed: ~p\n", [PGNErrorCode])
+    end.
+
+cmd_maretron_compass_get_last_calibration_status() ->
+    #{
+        cmd => "get-last-calibration-status",
+        opts => [device_opt()],
+        help => {doc, [{p, "Get the last calibration status from the compass."}]},
+        cb => fun do_maretron_compass_get_last_calibration_status/3
+    }.
+
+do_maretron_compass_get_last_calibration_status(_Env, CmdStack, Device) ->
+    [_Compass, _Maretron, {_Cmd, Opts} | _] = CmdStack,
+    do_n2k_request(Opts, do_maretron_compass_get_last_calibration_status_fun(Device)).
+
+do_maretron_compass_get_last_calibration_status_fun(Device) ->
+    fun(Transport) ->
+        n2k_maretron:compass_resent_calibration_status(Transport, Device),
+        case
+            n2k_maretron:compass_recv_calibration_status(
+                Transport, fun maretron_compass_calibration_status/1
+            )
+        of
+            ok ->
+                halt(0);
+            error ->
+                halt(1)
+        end
+    end.
+
+cmd_maretron_compass_start_rate_of_turn_zeroing() ->
+    #{
+        cmd => "start-rate-of-turn-zeroing",
+        opts => [device_opt()],
+        help =>
+            {doc, [
+                {p, "Start the rate of turn zeroing."}
+            ]},
+        cb => fun do_maretron_compass_start_rate_of_turn_zeroing/3
+    }.
+
+do_maretron_compass_start_rate_of_turn_zeroing(_Env, CmdStack, Device) ->
+    [_Compass, _Maretron, {_Cmd, Opts} | _] = CmdStack,
+    do_n2k_request(Opts, do_maretron_compass_start_rate_of_turn_zeroing_fun(Device)).
+
+do_maretron_compass_start_rate_of_turn_zeroing_fun(Device) ->
+    fun(Transport) ->
+        n2k_maretron:compass_start_rate_of_turn_zeroing(Transport, Device)
+    end.
+
+cmd_maretron_compass_cancel_rate_of_turn_zeroing() ->
+    #{
+        cmd => "cancel-rate-of-turn-zeroing",
+        opts => [device_opt()],
+        help =>
+            {doc, [
+                {p, "Start the rate of turn zeroing."}
+            ]},
+        cb => fun do_maretron_compass_cancel_rate_of_turn_zeroing/3
+    }.
+
+do_maretron_compass_cancel_rate_of_turn_zeroing(_Env, CmdStack, Device) ->
+    [_Compass, _Maretron, {_Cmd, Opts} | _] = CmdStack,
+    do_n2k_request(Opts, do_maretron_compass_cancel_rate_of_turn_zeroing_fun(Device)).
+
+do_maretron_compass_cancel_rate_of_turn_zeroing_fun(Device) ->
+    fun(Transport) ->
+        n2k_maretron:compass_cancel_rate_of_turn_zeroing(Transport, Device)
+    end.
+
+cmd_maretron_compass_set_rate_of_turn_dampening() ->
+    #{
+        cmd => "set-rate-of-turn-damping",
+        opts => [
+            device_opt(),
+            #{
+                long => "period",
+                type => {int, [{100, 60000}]},
+                required => true
+            }
+        ],
+        help =>
+            {doc, [
+                {p, "Start the rate of turn zeroing."}
+            ]},
+        cb => fun do_maretron_compass_set_rate_of_turn_dampening/4
+    }.
+
+do_maretron_compass_set_rate_of_turn_dampening(_Env, CmdStack, Device, Period) ->
+    [_Compass, _Maretron, {_Cmd, Opts} | _] = CmdStack,
+    do_n2k_request(Opts, do_maretron_compass_set_rate_of_turn_dampening_fun(Device, Period)).
+
+do_maretron_compass_set_rate_of_turn_dampening_fun(Device, Period) ->
+    fun(Transport) ->
+        n2k_maretron:compass_cancel_rate_of_turn_zeroing(Transport, Device, Period)
+    end.
+
+cmd_maretron_tank_meter() ->
+    #{
+        cmd => "tank-meter",
+        help => {doc, [{p, "Maretron tank-meter-specific commands."}]},
+        required_cmd => true,
+        cmds =>
+            [
+                cmd_maretron_get_depth()
+            ]
+    }.
 
 cmd_maretron_get_depth() ->
     #{
-        cmd => "maretron-get-depth",
-        opts => [
-            #{
-                short => $d,
-                long => "device",
-                type => int
-            }
-        ],
+        cmd => "get-depth",
+        opts => [device_opt()],
         cb => fun do_maretron_get_depth/3
     }.
 
 do_maretron_get_depth(_Env, CmdStack, Device) ->
-    [ReqCmd | _] = CmdStack,
-    {_Cmd, Opts} = ReqCmd,
+    [_TankMeter, _Maretron, {_Cmd, Opts} | _] = CmdStack,
+    do_n2k_request(Opts, do_maretron_get_depth_fun(Device)).
+
+do_maretron_get_depth_fun(Device) ->
+    fun(Transport) ->
+        case n2k_maretron:get_depth(Transport, Device) of
+            {ok, Msg} ->
+                io:format("~s\n", [n2k:fmt_nmea_message(Msg, true)])
+        end
+    end.
+
+device_opt() ->
+    #{
+        short => $d,
+        long => "device",
+        type => int,
+        required => true
+    }.
+
+do_n2k_request(Opts, F) ->
     #{protocol := Proto, address := Address, port := Port} = Opts,
-    case n2k_maretron:get_depth(Proto, Address, Port, Device) of
-        {ok, Msg} ->
-            io:format("~s\n", [n2k:fmt_nmea_message(Msg, true)])
+    case n2k_transport:open_raw_ip(Proto, Address, Port) of
+        {ok, Transport} ->
+            F(Transport),
+            halt(0);
+        {error, Error} ->
+            ErrStr =
+                case Error of
+                    timeout ->
+                        "timeout";
+                    _ ->
+                        inet:format_error(Error)
+                end,
+            io:format(
+                "Failed to connect to NMEA gateway ~s:~p: ~s\n",
+                [Address, Port, ErrStr]
+            ),
+            halt(1)
     end.
 
 guess_format(FName) ->

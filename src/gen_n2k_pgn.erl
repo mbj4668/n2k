@@ -147,11 +147,17 @@ collect_pgns([{PGN, Info} | T], Acc) ->
 collect_pgns([], []) ->
     [].
 
-filter_pgns([{126208, _Info} | T]) ->
+filter_pgns([{126208, Infos} | T]) ->
+    Infos2 = [
+        Info
+     || Info <- Infos,
+        not lists:keymember(repeating_field_set1_size, 1, Info) andalso
+            not lists:keymember(repeating_field_set2_size, 1, Info)
+    ],
     %% TODO: In order to properly implement this PGN we would need a
     %% generated table of all PGNs and their fields.  For example
     %% `pgn_field(PGN, FieldNumber)`.
-    filter_pgns(T);
+    [{126208, Infos2} | filter_pgns(T)];
 filter_pgns([PGN | T]) ->
     [PGN | filter_pgns(T)];
 filter_pgns([]) ->
@@ -165,7 +171,9 @@ write_decode0(Fd, []) ->
     %% Add decode of the fallback PGNs
     io:format(
         Fd,
-        "decode(126208, __DATA) ->\n"
+        "decode(PGN,Data)-> decode_unknown(PGN,Data).\n"
+        "\n"
+        "decode_unknown(126208, __DATA) ->\n"
         "    case __DATA of\n"
         "        <<0,PGN:24/little-unsigned,TransmissionInterval:32,\n"
         "          TransmissionIntervalOffset:16,NumberOfParameters:8,Rest/binary>> ->\n"
@@ -196,8 +204,6 @@ write_decode0(Fd, []) ->
         "        _ ->\n"
         "            decode_unknown(126208,__DATA)\n"
         "    end;\n"
-        "decode(PGN,Data)-> decode_unknown(PGN,Data).\n"
-        "\n"
         "decode_unknown(126720,\n"
         "       <<_0:8,IndustryCode:3/little-unsigned,_2:2,_1:3,Data/bitstring>>)  ->\n"
         "    <<ManufacturerCode:11/unsigned>> = <<_1:3,_0:8>>,\n"

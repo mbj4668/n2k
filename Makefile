@@ -11,7 +11,7 @@ CUSTOM_PGN_XMLS = $(wildcard $(CUSTOM_DIR)/*-pgns.xml)
 
 CUSTOM_MODULES = $(basename $(notdir $(wildcard $(CUSTOM_DIR)/*.erl)))
 
-PGNS_XML = src/canboat.xml $(CUSTOM_PGN_XMLS)
+PGNS_XML = src/canboat.xml $(wildcard src/*-pgns.xml) $(CUSTOM_PGN_XMLS)
 
 ifdef CUSTOM_PGN_ERL
 PGN_ERL = $(CUSTOM_PGN_ERL)
@@ -25,7 +25,7 @@ BEHAVIOR_BEAMS = ebin/n2k_pgn_callback.beam
 
 DEPS = eclip mtab
 
-dep_eclip = git https://github.com/mbj4668/eclip.git 2.0.2
+dep_eclip = git https://github.com/mbj4668/eclip.git
 dep_mtab = git https://github.com/mbj4668/mtab.git
 
 ERL_MODULES = n2k_pgn $(CUSTOM_MODULES)

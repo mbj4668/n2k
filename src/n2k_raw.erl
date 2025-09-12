@@ -11,7 +11,8 @@
 -module(n2k_raw).
 
 -export([read_raw_file/1, read_raw_file/3]).
--export([decode_raw/1, encode_raw/1, encode_raw_line/1, encode_raw_frame/2]).
+-export([decode_raw/1]).
+-export([encode_raw/1, encode_raw_line/1, encode_raw_frame/2, encode_raw_frame/1]).
 
 -export_type([line/0]).
 
@@ -119,7 +120,7 @@ encode_raw_line({{Time, CanId, Data}, Dir}) ->
         fmt_raw_data(Data)
     ].
 
--spec encode_raw_frame(n2k:canid(), binary()) -> line().
+-spec encode_raw_frame(n2k:canid(), binary()) -> iodata().
 %% This line can be sent to a yacht device's gw.  Note that the src in the canid
 %% doesn't matter; the gw will replace it with its own src.
 encode_raw_frame(CanId, Data) ->
@@ -131,13 +132,25 @@ encode_raw_frame(CanId, Data) ->
         $\n
     ].
 
+-spec encode_raw_frame({n2k:frame(), dir()}) -> iodata().
+%% This line can be sent to a yacht device's gw.  Note that the src in the canid
+%% doesn't matter; the gw will replace it with its own src.
+encode_raw_frame({_Time, CanId, Data}) ->
+    [
+        fmt_raw_canid(CanId),
+        $\s,
+        fmt_raw_data(Data),
+        $\r,
+        $\n
+    ].
+
 fmt_raw_dir(rx) -> $R;
 fmt_raw_dir(tx) -> $T.
 
+fmt_raw_canid(CanId) when is_integer(CanId) ->
+    n2k:fmt_hex(<<0:3, CanId:29>>, []);
 fmt_raw_canid(CanId) when is_tuple(CanId) ->
-    fmt_raw_canid(n2k:encode_canid(CanId));
-fmt_raw_canid(CanId) ->
-    n2k:fmt_hex(<<0:3, CanId:29>>, []).
+    fmt_raw_canid(n2k:encode_canid(CanId)).
 
 fmt_raw_data(Data) ->
     n2k:fmt_hex(Data, $\s).
