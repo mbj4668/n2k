@@ -28,7 +28,7 @@ DEPS = eclip mtab
 dep_eclip = git https://github.com/mbj4668/eclip.git
 dep_mtab = git https://github.com/mbj4668/mtab.git
 
-ERL_MODULES = n2k_pgn $(CUSTOM_MODULES)
+GENERATED_ERL_MODULES = n2k_pgn $(CUSTOM_MODULES)
 EXCLUDE_ERL_MODULES = gen_n2k_pgn gen_pgns_term n2k_pgn_callback
 ERLC_OPTS = -Werror
 
