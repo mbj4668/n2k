@@ -1,0 +1,545 @@
+defs:
+  maretronManufacturerCode: &maretronManufacturerCode
+    id: manufacturerCode
+    name: Manufacturer Code
+    description: Maretron
+    bitlength: 11
+    match: 137
+    resolution: 1
+    enum: MANUFACTURER_CODE
+  reserved2: &reserved2
+    id: reserved
+    bitlength: 2
+  reserved8: &reserved8
+    id: reserved
+    bitlength: 8
+  marineIndustryCode: &marineIndustryCode
+    id: industryCode
+    name: Industry Code
+    description: Marine Industry
+    bitlength: 3
+    match: 4
+    enum: INDUSTRY_CODE
+  productCode: &productCode
+    id: productCode
+    name: Product Code
+    bitlength: 16
+    enum: MARETRON_PRODUCT_CODE
+  slaveResponseCommand: &slaveResponseCommand
+    id: command
+    name: Command
+    bitlength: 8
+    enum: MARETRON_SLAVE_RESPONSE_COMMAND
+  softwareCode1: &softwareCode1
+    id: softwareCode
+    name: Software Code
+    bitlength: 16
+    match: 1
+    type: NUMBER
+  commandFunctionCode: &commandFunctionCode
+    id: functionCode
+    name: Function Code
+    description: Command
+    bitlength: 8
+    match: 1
+    enum: GROUP_FUNCTION
+  command: &command
+    id: command
+    name: Command
+    bitlength: 8
+    enum: MARETRON_COMMAND
+  rateOfTurnCommand: &rateOfTurnCommand
+    id: rateOfTurnCommand
+    name: Rate of Turn Command
+    bitlength: 16
+    enum: MARETRON_RATE_OF_TURN_PARAMETER
+  commandedPGN126270: &commandedPGN126270
+    id: pgn
+    name: PGN
+    description: Commanded PGN
+    bitlength: 24
+    match: 126720
+    type: NUMBER
+  priority: &priority
+    id: priority
+    name: Priority
+    bitlength: 4
+    enum: PRIORITY
+  reserved4: &reserved4
+    id: reserved
+    bitlength: 4
+  numberOfParameters4: &numberOfParameters4
+    id: numberOfParameters
+    name: Number of Parameters
+    description: How many parameter pairs will follow
+    bitlength: 8
+    match: 4
+    type: NUMBER
+  parameter1: &parameter1
+    id: parameter
+    name: Parameter
+    description: Parameter index
+    bitlength: 8
+    match: 1
+    type: NUMBER
+  parameter2: &parameter2
+    id: parameter
+    name: Parameter
+    description: Parameter index
+    bitlength: 8
+    match: 2
+    type: NUMBER
+  parameter3: &parameter3
+    id: parameter
+    name: Parameter
+    description: Parameter index
+    bitlength: 8
+    match: 3
+    type: NUMBER
+  parameter4: &parameter4
+    id: parameter
+    name: Parameter
+    description: Parameter index
+    bitlength: 8
+    match: 4
+    type: NUMBER
+  maretronVendorIdAndIndustryCode: &maretronVendorIdAndIndustryCode
+    id: maretronVendorIdAndIndustryCode
+    name: Value
+    bitlength: 16
+    match: 39049
+    type: NUMBER
+  rateOfTurnDamping: &rateOfTurnDamping
+    id: rateOfTurnDamping
+    name: Rate of Turn Damping
+    bitlength: 16
+    type: NUMBER
+    resolution: 0.001
+    range:
+      min: 100
+      max: 60000
+  orientation: &orientation
+    id: orientation
+    name: Orientation
+    bitlength: 16
+    enum: MARETRON_INSTALLATION_ORIENTATION
+    direction: &direction
+     id: direction
+     name: Direction
+     bitlength: 16
+     enum: MARETRON_INSTALLATION_DIRECTION
+  unknowndata: &unknowndata
+    id: data
+    name: Data
+    type: BINARY
+  commonFields126720:
+    - *maretronManufacturerCode
+    - *reserved2
+    - *marineIndustryCode
+    - *productCode
+    - *softwareCode1
+  commonFields126208:
+    - *commandFunctionCode
+    - *commandedPGN126270
+    - *priority
+    - *reserved4
+    - *numberOfParameters4
+    - *parameter1
+    - *maretronVendorIdAndIndustryCode
+    - *parameter2
+    - *productCode
+    - *parameter3
+    - *softwareCode1
+
+enums:
+  - name: MARETRON_DEVIATION_CALIBRATION_STATUS
+    vals:
+      0: Deviation Calibration Started
+      1: Deviation Calibration Completed Successfully
+      2: Deviation Calibration Failed to Complete
+      3: Deviation Calibration Turning Too Fast
+      4: Deviation Calibration Turning Too Slow
+      5: Deviation Calibration Invalid Movement
+  - name: MARETRON_COMMAND
+    vals:
+      33: Tank Meter Set Level Configuration
+      49: Tank Meter Get Level Configuration
+      36: Compass Installation Offset Calibration
+      80: Compass Resend Calibration Status
+      93: Compass Set Variation Source
+      94: Compass Rate of Turn Configuration # FIXME bad name, seems to be also installtion direction
+      240: Compass Reset and Start Calibration
+  - name: MARETRON_RATE_OF_TURN_PARAMETER
+    vals:
+      1: Get Damping Period
+      2: Set Damping Period
+      17: Initiate Zeroing
+      18: Cancel Zeroing
+      513: Get Installation Direction
+      514: Set Installation Direction
+  - name: MARETRON_PRODUCT_CODE
+    vals:
+      434: SSC200
+      2686: SSC300
+      27725: TLM100
+  - name: MARETRON_SLAVE_RESPONSE_COMMAND
+    vals:
+      49: Tank Meter Level Configuration
+      93: Variation Source
+      94: Compass Rate of Turn Configuration
+      80: Deviation Calibration Status
+      252: Information
+  - name: MARETRON_VARIATION_SOURCE
+    vals:
+      0: Manual
+      1: NMEA 2000
+      2: NMEA 0183
+      3: NMEA 2000 or NMEA 0183
+  - name: MARETRON_INSTALLATION_ORIENTATION
+    vals:
+      1: Normal
+      2: Upside down
+  - name: MARETRON_INSTALLATION_DIRECTION
+    vals:
+      1: Normal
+      2: Backward
+
+pgns:
+  - pgn: 126720
+    id: maretronDeviationCalibrationStatus
+    description: "Maretron: Slave Response - Deviation Calibration Status"
+    explanation: This indicates the status of the deviation calibration process.
+    url: https://www.maretron.com/support/manuals/SSC300UM_1.0.pdf
+    type: Fast
+    complete: true
+    fields:
+      - _add_list_entries: commonFields126720
+      - _merge_from_def: slaveResponseCommand
+        match: 80 # Deviation Calibration Status
+      - id: status
+        name: Status
+        bitlength: 8
+        enum: MARETRON_DEVIATION_CALIBRATION_STATUS
+
+  # Observed in traces
+  - pgn: 126720
+    id: maretronInformation
+    description: "Maretron: Slave Response - Information Message"
+    type: Fast
+    complete: true
+    fields:
+      - _add_list_entries: commonFields126720
+      - _merge_from_def: slaveResponseCommand
+        match: 252 # Information
+      - id: reserved
+        # Only 0 observed.  Maybe ASCII/Unicode indicator (but backwards)?
+        bitlength: 8
+      - id: text
+        name: Text
+        bitlengthvariable: true
+        type: STRING_LZ
+
+  # Observed in traces
+  - pgn: 126720
+    id: maretronVariationSourceResponse
+    description: "Maretron: Slave Response - Variation Source"
+    explanation: Sent as reply to both Set Variation Source and Get Variation Source
+    type: Fast
+    complete: true
+    fields:
+      - _add_list_entries: commonFields126720
+      - _merge_from_def: slaveResponseCommand
+        match: 93 # Variation Source
+      - id: source
+        bitlength: 8
+        enum: MARETRON_VARIATION_SOURCE
+      - id: variation
+        name: Variation
+        bitlength: 16
+        unit: rad
+        resolution: 0.0001
+        signed: true
+        range:
+          min: -3.2767
+          max: 3.2765
+        type: NUMBER
+        physical-quantity: ANGLE
+
+  # Observed in traces
+  - pgn: 126720
+    id: maretronGetRateOfTurnConfigurationResponse
+    description: "Maretron: Slave Response - Get Rate of Turn Damping"
+    type: Fast
+    complete: true
+    fields:
+      - _add_list_entries: commonFields126720
+      - _merge_from_def: slaveResponseCommand
+        match: 94 # Compass Rate of Turn Configuration
+      - _merge_from_def: rateOfTurnCommand
+        match: 1 # Get Rate of Turn Configuration
+      - *rateOfTurnDamping
+
+  # Observed in traces
+  - pgn: 126720
+    id: maretronSetRateOfTurnDampingResponse
+    description: "Maretron: Slave Response - Set Rate of Turn Damping"
+    type: Fast
+    complete: true
+    fields:
+      - _add_list_entries: commonFields126720
+      - _merge_from_def: slaveResponseCommand
+        match: 94 # Compass Rate of Turn Configuration
+      - _merge_from_def: rateOfTurnCommand
+        match: 2 # Set Rate of Turn Configuration
+      - *rateOfTurnDamping
+
+  # Observed in traces
+  - pgn: 126720
+    id: maretronInstallationConfigurationResponse
+    description: "Maretron: Slave Response - Installation Configuration"
+    type: Fast
+    complete: true
+    fields:
+      - _add_list_entries: commonFields126720
+      - _merge_from_def: slaveResponseCommand
+        match: 94 # Compass Rate of Turn Configuration
+      - _merge_from_def: rateOfTurnCommand
+        match: 513 # Get Installation Configuration
+      - *orientation
+      - *direction
+
+  - pgn: 126720
+    id: maretronTankLevelConfigurationResponse
+    description: "Maretron: Slave Response - Tank Level Configuration"
+    type: Fast
+    complete: true
+    fields:
+      - _add_list_entries: commonFields126720
+      - _merge_from_def: slaveResponseCommand
+        match: 49 # Compass Rate of Turn Configuration
+      - *reserved8
+      - id: row
+        bitlength: 8
+        type: NUMBER
+      - id: depth
+        bitlength: 32
+        type: NUMBER
+      - id: percent
+        bitlength: 16
+        resolution: 0.004
+        type: NUMBER
+
+
+  - pgn: 126720
+    id: maretronUnknownSlaveResponse
+    description: "Maretron: Slave Response - Unknown"
+    explanation: "A slave response that hasn't yet been reverse engineered."
+    type: Fast
+    complete: true
+    fields:
+      - _add_list_entries: commonFields126720
+      - id: command
+        name: Command
+        bitlength: 8
+        type: NUMBER
+      - *unknowndata
+
+  - pgn: 126208
+    id: maretronCompassResetStartCalibration
+    description: "NMEA - Command group function - Maretron Proprietary Reset"
+    explanation: "This will initiate a reset and force the SSC300 to start the calibration process."
+    url: https://www.maretron.com/support/manuals/SSC300UM_1.0.pdf
+    type: Fast
+    complete: true
+    fields:
+      - _add_list_entries: commonFields126208
+      - _merge_from_def: command
+        match: 240 # Compass Reset and Start Calibration
+
+  - pgn: 126208
+    id: maretronCompassStartRateOfTurnZeroing
+    description: NMEA - Command group function - Maretron Proprietary Start Rate of Turn Zeroing
+    explanation: |
+      This command causes the SSC300 to zero the rate of turn
+      indication and record the compensation value used, along with
+      the current operating temperature of the compass. The boat must
+      remain at rest for a period of one minute after this command is
+      issued.
+    type: Fast
+    fields:
+      - _add_list_entries: commonFields126208
+      - _merge_from_def: command
+        match: 94 # Compass Rate of Turn Configuration
+      - _merge_from_def: rateOfTurnCommand
+        match: 17 # Initiate Zeroing
+
+  - pgn: 126208
+    id: maretronCompassCancelRateOfTurnZeroing
+    description: "NMEA - Command group function - Maretron Proprietary Cancel Rate of Turn Zeroing"
+    explanation: |
+      This command causes the SSC300 to cancel any rate of turn
+      zeroing operations currently in progress.
+    url: https://www.maretron.com/support/manuals/SSC300UM_1.0.pdf
+    type: Fast
+    fields:
+      - _add_list_entries: commonFields126208
+      - _merge_from_def: command
+        match: 94 # Compass Rate of Turn Configuration
+      - _merge_from_def: rateOfTurnCommand
+        match: 18 # Cancel Zeroing
+
+  - pgn: 126208
+    id: maretronCompassGetRateOfTurnDamping
+    description: "NMEA - Command group function - Maretron Proprietary Get Rate of Turn Damping"
+    explanation: This command causes the SSC300 to send its configured rate of turn damping period.
+    url: https://www.maretron.com/support/manuals/SSC300UM_1.0.pdf
+    type: Fast
+    fields:
+      - _add_list_entries: commonFields126208
+      - _merge_from_def: command
+        match: 94 # Compass Rate of Turn Configuration
+      - _merge_from_def: rateOfTurnCommand
+        match: 1 # Get Damping Period
+
+  - pgn: 126208
+    id: maretronCompassSetRateOfTurnDamping
+    description: "NMEA - Command group function - Maretron Proprietary Set Rate of Turn Damping"
+    explanation: |
+      This command causes the SSC300 to use a rate of turn damping
+      rate corresponding to the value programmed in "damping
+      period". The damping period is programmable from 100 to 60000,
+      which represents 100ms to 60 seconds.
+    url: https://www.maretron.com/support/manuals/SSC300UM_1.0.pdf
+    type: Fast
+    fields:
+      - _add_list_entries: commonFields126208
+      - _merge_from_def: command
+        match: 94 # Compass Rate of Turn Configuration
+      - _merge_from_def: rateOfTurnCommand
+        match: 2 # Set Damping Period
+      - *rateOfTurnDamping
+
+  - pgn: 126208
+    id: maretronCompassGetInstallationConfiguration
+    description: |
+      NMEA - Command group function - Maretron Proprietary Get Installation Configuration
+    type: Fast
+    fields:
+      - _add_list_entries: commonFields126208
+      - _merge_from_def: command
+        match: 94 # Compass Rate of Turn Configuration
+      - _merge_from_def: rateOfTurnCommand
+        match: 513 # Get Installation Configuration
+
+  - pgn: 126208
+    id: maretronCompassSetInstallation
+    description: |
+      NMEA - Command group function - Maretron Proprietary Set Installation Configuration
+    type: Fast
+    fields:
+      - _add_list_entries: commonFields126208
+      - _merge_from_def: command
+        match: 94 # Compass Rate of Turn Configuration
+      - _merge_from_def: rateOfTurnCommand
+        match: 514 # Set Installation Direction
+      - *orientation
+      - *direction
+
+  - pgn: 126208
+    id: maretronCompassResendCalibrationStatus
+    description: "NMEA - Command group function - Maretron Proprietary Resend Calibration Status"
+    explanation: This will cause the SSC300 to resend the last deviation calibration status message.
+    url: https://www.maretron.com/support/manuals/SSC300UM_1.0.pdf
+    type: Fast
+    fields:
+      - _add_list_entries: commonFields126208
+      - _merge_from_def: command
+        match: 80 # Compass Resend Calibration Status
+
+  - pgn: 126208
+    id: maretronGetVariationSource
+    description: NMEA - Command group function - Maretron Proprietary Get Variation Source
+    url: https://www.maretron.com/support/manuals/SSC300UM_1.0.pdf
+    type: Fast
+    fields:
+      - _add_list_entries: commonFields126208
+      - _merge_from_def: command
+        match: 93 # Compass Set Variation Source
+      - id: source
+        name: Source
+        bitlength: 8
+        match: 255 # By using 0xff the device just reports the current value
+        type: NUMBER
+
+  - pgn: 126208
+    id: maretronSetVariationSource
+    description: NMEA - Command group function - Maretron Proprietary Set Variation Source
+    url: https://www.maretron.com/support/manuals/SSC300UM_1.0.pdf
+    type: Fast
+    fields:
+      - _add_list_entries: commonFields126208
+      - _merge_from_def: command
+        match: 93 # Compass Set Variation Source
+      - id: source
+        name: Source
+        bitlength: 8
+        enum: MARETRON_VARIATION_SOURCE
+
+  - pgn: 126208
+    id: maretronGetTankLevelConfiguration
+    description: NMEA - Command group function - Maretron Proprietary Get Tank Level Configuration
+    type: Fast
+    fields:
+      - _add_list_entries: commonFields126208
+      - _merge_from_def: command
+        match: 49 # Tank Meter Get Level Configuration
+      - *unknowndata
+
+  - pgn: 126208
+    id: maretronSetTankLevelConfiguration
+    description: NMEA - Command group function - Maretron Proprietary Set Tank Level Configuration
+    type: Fast
+    fields:
+      - _add_list_entries: commonFields126208
+      - _merge_from_def: command
+        match: 33 # Tank Meter Set Level Configuration
+      - *unknowndata
+
+
+  # FIXME: this is documented in the manual, but the values seen on the wire don't match
+  - pgn: 126208
+    id: maretronCompassInstallationOffsetCalibration
+    description: "NMEA - Command group function - Maretron Proprietary Installation Offset"
+    explanation: |
+      This PGN performs the installation offset of the compass. It
+      sets the roll and pitch outputs to zero at the compass’ current
+      orientation and sets the heading reading for the current
+      orientation to the value given by the PGN
+    url: https://www.maretron.com/support/manuals/SSC300UM_1.0.pdf
+    type: Fast
+    fields:
+      - _add_list_entries: commonFields126208
+      - _merge_from_def: command
+        match: 36 # Compass Installation Offset Calibration
+      - id: heading
+        name: Heading
+        bitlength: 16
+        resolution: 0.1
+        range:
+          min: 0
+          max: 359.9
+        type: NUMBER
+        physical-quantity: ANGLE
+
+  - pgn: 126208
+    id: maretronUnknownCommand
+    description: NMEA - Command group function - Unknown Maretron Proprietary Command
+    explanation: A Maretron command that hasn't yet been reverse engineered.
+    type: Fast
+    fields:
+      - _add_list_entries: commonFields126208
+      - id: command
+        name: Command
+        bitlength: 8
+        enum: MARETRON_COMMAND
+      - *unknowndata

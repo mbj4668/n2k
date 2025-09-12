@@ -11662,6 +11662,7 @@ limitations under the License.
         </Field>
       </Fields>
     </PGNInfo>
+<!--
     <PGNInfo>
       <PGN>126720</PGN>
       <Id>maretronSlaveResponse</Id>
@@ -11773,6 +11774,7 @@ limitations under the License.
         </Field>
       </Fields>
     </PGNInfo>
+-->
     <PGNInfo>
       <PGN>126976</PGN>
       <Id>0x1f0000x1feffStandardizedMixedSingleFastPacketNonAddressed</Id>

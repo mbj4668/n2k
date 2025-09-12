@@ -8,6 +8,7 @@
 -export([encode_string_variable_short_ascii/1]).
 -export([fmt_ms_time/1, fmt_date/1, fmt_hex/2]).
 -export([encode_nmea_message/2, encode_nmea_fast_message/3]).
+-export([isoRequest/2]).
 
 -export_type([canid/0, frame/0, message/0, data/0, dec_error/0, dec_state/0]).
 
@@ -413,7 +414,7 @@ fmt_val(MsgName, Name, Val, Fields, Pretty) ->
             case n2k_pgn:erlang_module(MsgName) of
                 false when is_binary(Val) ->
                     ValL = binary_to_list(Val),
-                    case io_lib:printable_list(ValL) of
+                    case printable_list(ValL) of
                         true ->
                             [$", ValL, $"];
                         false when Pretty ->
@@ -427,6 +428,9 @@ fmt_val(MsgName, Name, Val, Fields, Pretty) ->
                     Mod:format_val(MsgName, Name, Val, Fields)
             end
     end.
+
+printable_list(L) ->
+    lists:all(fun(Ch) -> Ch >= 32 end, L) andalso io_lib:printable_list(L).
 
 fmt_units(undefined) ->
     "";
@@ -463,3 +467,9 @@ pr1(<<A, Rest/binary>>) when ?is_pr(A) ->
     [?tr(A) | pr1(Rest)];
 pr1(Bin) ->
     [$", $, | pr0(Bin)].
+
+-spec isoRequest(PGN :: integer(), Dst :: byte()) -> frame().
+isoRequest(PGN, Dst) ->
+    CanId = {_Pri = 4, 59904, _Src = 95, Dst},
+    Data = <<PGN:24/little-unsigned>>,
+    {-1, CanId, Data}.
