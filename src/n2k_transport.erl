@@ -125,7 +125,9 @@ init_recv(Format, HandleF, HandleInitS) ->
                                                 Done;
                                             HandleS1 ->
                                                 {N2kS1, HandleS1}
-                                        end
+                                        end;
+                                    {error, _, N2kS1} ->
+                                        {N2kS1, HandleS0}
                                 end;
                             false ->
                                 {N2kS0, HandleS0}

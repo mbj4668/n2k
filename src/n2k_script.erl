@@ -408,7 +408,12 @@ cmd_request() ->
                 long => "port",
                 type => int,
                 default => 1457,
-                help => "TCP port to connect to, or UDP port to listen to"
+                help => "TCP port to connect to, or UDP port to send to (and listen to)"
+            },
+            #{
+                long => "lport",
+                type => int,
+                help => "UDP port to listen to"
             }
         ],
         required_cmd => true,
@@ -568,6 +573,7 @@ cmd_maretron_compass() ->
             [
                 cmd_maretron_compass_calibrate_deviation(),
                 cmd_maretron_compass_get_last_calibration_status(),
+                cmd_maretron_compass_calibrate_installation_offset(),
                 cmd_maretron_compass_start_rate_of_turn_zeroing(),
                 cmd_maretron_compass_cancel_rate_of_turn_zeroing(),
                 cmd_maretron_compass_set_rate_of_turn_dampening()
@@ -641,7 +647,7 @@ do_maretron_compass_get_last_calibration_status(_Env, CmdStack, Device) ->
 
 do_maretron_compass_get_last_calibration_status_fun(Device) ->
     fun(Transport) ->
-        n2k_maretron:compass_resent_calibration_status(Transport, Device),
+        n2k_maretron:compass_resend_calibration_status(Transport, Device),
         case
             n2k_maretron:compass_recv_calibration_status(
                 Transport, fun maretron_compass_calibration_status/1
@@ -652,6 +658,37 @@ do_maretron_compass_get_last_calibration_status_fun(Device) ->
             error ->
                 halt(1)
         end
+    end.
+
+cmd_maretron_compass_calibrate_installation_offset() ->
+    #{
+        cmd => "calibrate-installation-offset",
+        opts => [
+            device_opt(),
+            #{
+                long => "heading",
+                type => {int, [{0, 3599}]},
+                required => true
+            }
+        ],
+        help =>
+            {doc, [
+                {p,
+                    "Performs the installation offset of the compass. "
+                    "It sets the roll and pitch outputs to zero at the compass’ current "
+                    "orientation and sets the heading reading for the current orientation "
+                    "to HEADING."}
+            ]},
+        cb => fun do_maretron_compass_calibrate_installaion_offset/4
+    }.
+
+do_maretron_compass_calibrate_installaion_offset(_Env, CmdStack, Device, Heading) ->
+    [_Compass, _Maretron, {_Cmd, Opts} | _] = CmdStack,
+    do_n2k_request(Opts, do_maretron_compass_calibrate_installaion_offset_fun(Device, Heading)).
+
+do_maretron_compass_calibrate_installaion_offset_fun(Device, Heading) ->
+    fun(Transport) ->
+        n2k_maretron:compass_calibrate_installation_offset(Transport, Device, Heading)
     end.
 
 cmd_maretron_compass_start_rate_of_turn_zeroing() ->
@@ -718,7 +755,7 @@ do_maretron_compass_set_rate_of_turn_dampening(_Env, CmdStack, Device, Period) -
 
 do_maretron_compass_set_rate_of_turn_dampening_fun(Device, Period) ->
     fun(Transport) ->
-        n2k_maretron:compass_cancel_rate_of_turn_zeroing(Transport, Device, Period)
+        n2k_maretron:compass_set_rate_of_turn_dampening(Transport, Device, Period)
     end.
 
 cmd_maretron_tank_meter() ->
@@ -761,7 +798,8 @@ device_opt() ->
 
 do_n2k_request(Opts, F) ->
     #{protocol := Proto, address := Address, port := Port} = Opts,
-    case n2k_transport:open_raw_ip(Proto, Address, Port) of
+    LPort = maps:get(lport, Opts, Port),
+    case n2k_transport:open_raw_ip(Proto, Address, Port, LPort) of
         {ok, Transport} ->
             F(Transport),
             halt(0);

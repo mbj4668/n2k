@@ -1119,7 +1119,7 @@
           <Id>maretronCommand</Id>
           <Name>Value</Name>
           <BitLength>8</BitLength>
-          <Match>30</Match>
+          <Match>36</Match>
           <FieldType>LOOKUP</FieldType>
           <LookupEnumeration>MARETRON_COMMAND</LookupEnumeration>
         </Field>
