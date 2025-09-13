@@ -277,6 +277,7 @@ print_devices(WriteF, Res) ->
         "manufacturer",
         "function",
         "model",
+        "product code",
         "software vsn",
         "nmea2000",
         "len",
@@ -289,9 +290,9 @@ print_devices(WriteF, Res) ->
         | lists:map(
             fun({Src, {A, B, C}}) ->
                 {A0, A1} = pi(A),
-                {B0, B1, B2, B3} = pp(B),
+                {B0, B1, B2, B3, B4} = pp(B),
                 {C0, C1, C2} = pc(C),
-                [Src, A0, A1, B0, B1, B2, B3, C0, C1, C2]
+                [Src, A0, A1, B0, B1, B2, B3, B4, C0, C1, C2]
             end,
             Res
         )
@@ -332,7 +333,7 @@ pi(undefined) ->
 pp({_Time, _, {productInformation, Fields}}) ->
     [
         {nmea2000Version, Nmea2000Version},
-        {productCode, _ProductCode},
+        {productCode, ProductCode},
         {modelId, ModelId},
         {softwareVersionCode, SoftwareVersionCode},
         {modelVersion, _ModelVersion},
@@ -341,10 +342,10 @@ pp({_Time, _, {productInformation, Fields}}) ->
         {loadEquivalency, LoadEquivalency}
         | _
     ] = Fields,
-    {ModelId, SoftwareVersionCode, io_lib:format("~.3f", [Nmea2000Version * 0.001]),
+    {ModelId, ProductCode, SoftwareVersionCode, io_lib:format("~.3f", [Nmea2000Version * 0.001]),
         LoadEquivalency};
 pp(undefined) ->
-    {"", "", "", ""}.
+    {"", "", "", "", ""}.
 
 % fmt_configInformation({_Time, _, {configurationInformation, Fields}}) ->
 pc({_Time, _, {configurationInformation, Fields}}) ->

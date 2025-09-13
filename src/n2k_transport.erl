@@ -111,6 +111,8 @@ init_recv(Format, HandleF, HandleInitS) ->
         {message, PGNs} ->
             {
                 fun
+                    (_, {done, _} = Done) ->
+                        Done;
                     (Line, {N2kS0, HandleS0}) when is_binary(Line) ->
                         {Frame, _Dir} = n2k_raw:decode_raw(Line),
                         {_Time, {_Prio, PGN, _Src, _Dst}, _Data} = Frame,
@@ -144,8 +146,7 @@ init_recv(Format, HandleF, HandleInitS) ->
             }
     end.
 
-loop(Tr, _F, {done, Res}) ->
-    close(Tr),
+loop(_Tr, _F, {done, Res}) ->
     Res;
 loop(Tr, F, S0) ->
     receive

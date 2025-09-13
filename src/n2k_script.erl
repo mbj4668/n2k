@@ -622,7 +622,7 @@ do_maretron_compass_calibrate_deviation_fun(Device) ->
 maretron_compass_calibration_status(Res) ->
     case Res of
         {status, Status} ->
-            {enums, Enums} = n2k_pgns:type_info(maretronDeviationCalibrationStatus, status),
+            {enums, Enums} = n2k_pgn:type_info(maretronDeviationCalibrationStatus, status),
             case lists:keyfind(Status, 2, Enums) of
                 {Str, _} ->
                     io:format("Calibration status: ~s\n", [Str]);

@@ -257,7 +257,7 @@
           <Id>ssc300ProductCode</Id>
           <Name>Value</Name>
           <BitLength>16</BitLength>
-          <Match>434</Match>
+<!--          <Match>2686</Match> -->
           <FieldType>NUMBER</FieldType>
         </Field>
         <Field>
@@ -416,7 +416,7 @@
           <Id>ssc300ProductCode</Id>
           <Name>Value</Name>
           <BitLength>16</BitLength>
-          <Match>434</Match>
+<!--          <Match>2686</Match> -->
           <FieldType>NUMBER</FieldType>
         </Field>
         <Field>
@@ -584,7 +584,7 @@
           <Id>ssc300ProductCode</Id>
           <Name>Value</Name>
           <BitLength>16</BitLength>
-          <Match>434</Match>
+<!--          <Match>2686</Match> -->
           <FieldType>NUMBER</FieldType>
         </Field>
         <Field>
@@ -752,7 +752,7 @@
           <Id>ssc300ProductCode</Id>
           <Name>Value</Name>
           <BitLength>16</BitLength>
-          <Match>434</Match>
+<!--          <Match>2686</Match> -->
           <FieldType>NUMBER</FieldType>
         </Field>
         <Field>
@@ -932,7 +932,7 @@
           <Id>ssc300ProductCode</Id>
           <Name>Value</Name>
           <BitLength>16</BitLength>
-          <Match>434</Match>
+<!--          <Match>2686</Match> -->
           <FieldType>NUMBER</FieldType>
         </Field>
         <Field>
@@ -1090,7 +1090,7 @@
           <Id>ssc300ProductCode</Id>
           <Name>Value</Name>
           <BitLength>16</BitLength>
-          <Match>434</Match>
+<!--          <Match>2686</Match> -->
           <FieldType>NUMBER</FieldType>
         </Field>
         <Field>
