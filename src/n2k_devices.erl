@@ -33,7 +33,7 @@ get_devices(Transport, TimeoutMs) ->
     S0 = #get_devices{tr = Transport},
 
     %% Send first request for 60928 to all devices
-    ok = n2k_transport:send(Transport, isoRequest(60928, 255)),
+    ok = n2k_transport:send(Transport, n2k:isoRequest(60928, 255)),
     erlang:send_after(1000, self(), step0),
 
     %% Set timer to terminate collection of responses
@@ -41,17 +41,23 @@ get_devices(Transport, TimeoutMs) ->
 
     %% Collect responses
     PGNs = [60928, 126464, 126996, 126998],
-    S1 = n2k_transport:recv(Transport, {message, PGNs}, fun get_devices_handler/2, S0),
+    S1 = n2k_transport:recv(Transport, {message, PGNs, frame}, fun get_devices_handler/2, S0),
     A = lists:keysort(1, S1#get_devices.isoAddressClaims),
     B = lists:keysort(1, S1#get_devices.productInformations),
     C = lists:keysort(1, S1#get_devices.configInformations),
     {ok, merge_device_information(A, B, C)}.
 
-isoRequest(PGN, Dst) ->
-    CanId = {_Pri = 4, 59904, _Src = 95, Dst},
-    Data = <<PGN:24/little-unsigned>>,
-    {-1, CanId, Data}.
-
+get_devices_handler({frame, Frame}, S) when S#get_devices.st == collect_devices ->
+    %% We received a frame that was not part of the messages we look for.
+    %% Add the device to the devices list
+    {_Time, {_Pri, _PGN, Src, _Dst}, _} = Frame,
+    Devices = S#get_devices.devices,
+    case lists:member(Src, Devices) of
+        false ->
+            S#get_devices{devices = [Src | Devices]};
+        true ->
+            S
+    end;
 get_devices_handler({message, Msg}, S0) ->
     {_Time, {_Pri, PGN, Src, _Dst}, _} = Msg,
     S1 =
@@ -94,7 +100,7 @@ get_devices_handler({message, Msg}, S0) ->
 get_devices_handler(step0, S) ->
     %% Send request for 60928 to all devices again
     #get_devices{tr = Tr} = S,
-    ok = n2k_transport:send(Tr, isoRequest(60928, 255)),
+    ok = n2k_transport:send(Tr, n2k:isoRequest(60928, 255)),
     timer:sleep(100),
     erlang:send_after(1000, self(), {step1, 1}),
     S;
@@ -144,7 +150,7 @@ get_devices_handler({step4, N}, S) ->
         pgnLists = PLs,
         configInformations = CIs
     } = S,
-    ok = n2k_transport:send(Tr, isoRequest(126998, 255)),
+    ok = n2k_transport:send(Tr, n2k:isoRequest(126998, 255)),
     Devices1 = Devices0 -- [Src || {Src, _} <- CIs],
     case filter_devices(126998, Devices1, PLs) of
         Devices when Devices /= [], N =< 10 ->
@@ -212,7 +218,7 @@ send_iso_request_to_each_device(PGN, Devices, Tr, Next) ->
         fun() ->
             lists:foreach(
                 fun(Dst) ->
-                    ok = n2k_transport:send(Tr, isoRequest(PGN, Dst)),
+                    ok = n2k_transport:send(Tr, n2k:isoRequest(PGN, Dst)),
                     timer:sleep(100),
                     ok
                 end,

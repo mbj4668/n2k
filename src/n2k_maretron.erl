@@ -32,39 +32,27 @@
 %% erlfmt:ignore
 compass_start_calibration(Transport, Dst) ->
     Data =
-        nmea_command_group_function_data(126720, 4,
-                                        <<1, ?MARETRON_VENDOR_AND_CODE:16/little-unsigned,
-                                          2, ?SSC300_PROD_CODE:16/little-unsigned,
-                                          3, ?SSC300_SW_CODE:16/little-unsigned,
-                                          ?START_CALIBRATION_COMMAND>>),
+        nmea_command_group_function_data(
+            126720, 4,
+            <<1, ?MARETRON_VENDOR_AND_CODE:16/little-unsigned,
+              2, ?SSC300_PROD_CODE:16/little-unsigned,
+              3, ?SSC300_SW_CODE:16/little-unsigned,
+              ?START_CALIBRATION_COMMAND>>),
     CanId = {_Pri = 4, 126208, _Src = 95, Dst},
-    {CanIdInt, Frames} = n2k:encode_nmea_fast_message(CanId, Data, _Order = 1),
-    lists:foreach(
-        fun(Frame) ->
-            ok = n2k_transport:send(Transport, {-1, CanIdInt, Frame}),
-            timer:sleep(1)
-        end,
-        Frames
-    ).
+    n2k_transport:send_fast(Transport, n2k:encode_nmea_fast_message(CanId, Data, _Order = 1)).
 
 %% erlfmt:ignore
 %% Call compass_recv_calibration_status/2 to get progress and calibration status.
 compass_resend_calibration_status(Transport, Dst) ->
     Data =
-        nmea_command_group_function_data(126720, 4,
-                                        <<1, ?MARETRON_VENDOR_AND_CODE:16/little-unsigned,
-                                          2, ?SSC300_PROD_CODE:16/little-unsigned,
-                                          3, ?SSC300_SW_CODE:16/little-unsigned,
-                                          ?RESEND_CALIBRATION_STATUS_COMMAND>>),
+        nmea_command_group_function_data(
+            126720, 4,
+            <<1, ?MARETRON_VENDOR_AND_CODE:16/little-unsigned,
+              2, ?SSC300_PROD_CODE:16/little-unsigned,
+              3, ?SSC300_SW_CODE:16/little-unsigned,
+              ?RESEND_CALIBRATION_STATUS_COMMAND>>),
     CanId = {_Pri = 4, 126208, _Src = 95, Dst},
-    {CanIdInt, Frames} = n2k:encode_nmea_fast_message(CanId, Data, _Order = 1),
-    lists:foreach(
-        fun(Frame) ->
-            ok = n2k_transport:send(Transport, {-1, CanIdInt, Frame}),
-            timer:sleep(1)
-        end,
-        Frames
-    ).
+    n2k_transport:send_fast(Transport, n2k:encode_nmea_fast_message(CanId, Data, _Order = 1)).
 
 -spec compass_resend_calibration_status(
     n2k_transport:transport(),
@@ -73,7 +61,7 @@ compass_resend_calibration_status(Transport, Dst) ->
     ok | error.
 compass_recv_calibration_status(Tr, F) ->
     n2k_transport:recv(
-        Tr, {message, [126208, 126720]}, fun compass_recv_calibration_status_handler/2, F
+        Tr, {message, [126208, 126720], ignore}, fun compass_recv_calibration_status_handler/2, F
     ).
 
 compass_recv_calibration_status_handler(Msg, F) ->
@@ -106,21 +94,15 @@ compass_recv_calibration_status_handler(Msg, F) ->
 %% erlfmt:ignore
 compass_calibrate_installation_offset(Transport, Dst, Heading) ->
     Data =
-        nmea_command_group_function_data(126720, 4,
-                                        <<1, ?MARETRON_VENDOR_AND_CODE:16/little-unsigned,
-                                          2, ?SSC300_PROD_CODE:16/little-unsigned,
-                                          3, ?SSC300_SW_CODE:16/little-unsigned,
-                                          ?INSTALLATION_OFFSET_COMMAND,
-                                          Heading:16/little-unsigned>>),
+        nmea_command_group_function_data(
+            126720, 4,
+            <<1, ?MARETRON_VENDOR_AND_CODE:16/little-unsigned,
+              2, ?SSC300_PROD_CODE:16/little-unsigned,
+              3, ?SSC300_SW_CODE:16/little-unsigned,
+              ?INSTALLATION_OFFSET_COMMAND,
+              Heading:16/little-unsigned>>),
     CanId = {_Pri = 4, 126208, _Src = 95, Dst},
-    {CanIdInt, Frames} = n2k:encode_nmea_fast_message(CanId, Data, _Order = 1),
-    lists:foreach(
-        fun(Frame) ->
-            ok = n2k_transport:send(Transport, {-1, CanIdInt, Frame}),
-            timer:sleep(1)
-        end,
-        Frames
-    ),
+    n2k_transport:send_fast(Transport, n2k:encode_nmea_fast_message(CanId, Data, _Order = 1)),
     recv_nmea_acknowledge_group_function(Transport).
 
 -spec compass_start_rate_of_turn_zeroing(n2k_transport:transport(), integer()) ->
@@ -128,21 +110,15 @@ compass_calibrate_installation_offset(Transport, Dst, Heading) ->
 %% erlfmt:ignore
 compass_start_rate_of_turn_zeroing(Transport, Dst) ->
     Data =
-        nmea_command_group_function_data(126720, 4,
-                                        <<1, ?MARETRON_VENDOR_AND_CODE:16/little-unsigned,
-                                          2, ?SSC300_PROD_CODE:16/little-unsigned,
-                                          3, ?SSC300_SW_CODE:16/little-unsigned,
-                                          ?RATE_OF_TURN_CONFIGURATION_COMMAND,
-                                          ?RATE_OF_TURN_INITIATE_ZEROING>>),
+        nmea_command_group_function_data(
+            126720, 4,
+            <<1, ?MARETRON_VENDOR_AND_CODE:16/little-unsigned,
+              2, ?SSC300_PROD_CODE:16/little-unsigned,
+              3, ?SSC300_SW_CODE:16/little-unsigned,
+              ?RATE_OF_TURN_CONFIGURATION_COMMAND,
+              ?RATE_OF_TURN_INITIATE_ZEROING>>),
     CanId = {_Pri = 4, 126208, _Src = 95, Dst},
-    {CanIdInt, Frames} = n2k:encode_nmea_fast_message(CanId, Data, _Order = 1),
-    lists:foreach(
-        fun(Frame) ->
-            ok = n2k_transport:send(Transport, {-1, CanIdInt, Frame}),
-            timer:sleep(1)
-        end,
-        Frames
-    ),
+    n2k_transport:send_fast(Transport, n2k:encode_nmea_fast_message(CanId, Data, _Order = 1)),
     recv_nmea_acknowledge_group_function(Transport).
 
 -spec compass_cancel_rate_of_turn_zeroing(n2k_transport:transport(), integer()) ->
@@ -150,21 +126,15 @@ compass_start_rate_of_turn_zeroing(Transport, Dst) ->
 %% erlfmt:ignore
 compass_cancel_rate_of_turn_zeroing(Transport, Dst) ->
     Data =
-        nmea_command_group_function_data(126720, 4,
-                                        <<1, ?MARETRON_VENDOR_AND_CODE:16/little-unsigned,
-                                          2, ?SSC300_PROD_CODE:16/little-unsigned,
-                                          3, ?SSC300_SW_CODE:16/little-unsigned,
-                                          ?RATE_OF_TURN_CONFIGURATION_COMMAND,
-                                          ?RATE_OF_TURN_CANCEL_ZEROING>>),
+        nmea_command_group_function_data(
+            126720, 4,
+            <<1, ?MARETRON_VENDOR_AND_CODE:16/little-unsigned,
+              2, ?SSC300_PROD_CODE:16/little-unsigned,
+              3, ?SSC300_SW_CODE:16/little-unsigned,
+              ?RATE_OF_TURN_CONFIGURATION_COMMAND,
+              ?RATE_OF_TURN_CANCEL_ZEROING>>),
     CanId = {_Pri = 4, 126208, _Src = 95, Dst},
-    {CanIdInt, Frames} = n2k:encode_nmea_fast_message(CanId, Data, _Order = 1),
-    lists:foreach(
-        fun(Frame) ->
-            ok = n2k_transport:send(Transport, {-1, CanIdInt, Frame}),
-            timer:sleep(1)
-        end,
-        Frames
-    ),
+    n2k_transport:send_fast(Transport, n2k:encode_nmea_fast_message(CanId, Data, _Order = 1)),
     recv_nmea_acknowledge_group_function(Transport).
 
 -spec compass_set_rate_of_turn_dampening(n2k_transport:transport(), integer(), integer()) ->
@@ -172,22 +142,16 @@ compass_cancel_rate_of_turn_zeroing(Transport, Dst) ->
 %% erlfmt:ignore
 compass_set_rate_of_turn_dampening(Transport, Dst, PeriodMs) ->
     Data =
-        nmea_command_group_function_data(126720, 4,
-                                        <<1, ?MARETRON_VENDOR_AND_CODE:16/little-unsigned,
-                                          2, ?SSC300_PROD_CODE:16/little-unsigned,
-                                          3, ?SSC300_SW_CODE:16/little-unsigned,
-                                          ?RATE_OF_TURN_CONFIGURATION_COMMAND,
-                                          ?RATE_OF_TURN_SET_DAMPENING,
-                                          PeriodMs:16/little-unsigned>>),
+        nmea_command_group_function_data(
+            126720, 4,
+            <<1, ?MARETRON_VENDOR_AND_CODE:16/little-unsigned,
+              2, ?SSC300_PROD_CODE:16/little-unsigned,
+              3, ?SSC300_SW_CODE:16/little-unsigned,
+              ?RATE_OF_TURN_CONFIGURATION_COMMAND,
+              ?RATE_OF_TURN_SET_DAMPENING,
+              PeriodMs:16/little-unsigned>>),
     CanId = {_Pri = 4, 126208, _Src = 95, Dst},
-    {CanIdInt, Frames} = n2k:encode_nmea_fast_message(CanId, Data, _Order = 1),
-    lists:foreach(
-        fun(Frame) ->
-            ok = n2k_transport:send(Transport, {-1, CanIdInt, Frame}),
-            timer:sleep(1)
-        end,
-        Frames
-    ),
+    n2k_transport:send_fast(Transport, n2k:encode_nmea_fast_message(CanId, Data, _Order = 1)),
     recv_nmea_acknowledge_group_function(Transport).
 
 tank_meter_get_depth(_Transport, _Device) ->
@@ -228,7 +192,7 @@ nmea_command_group_function_data(CommandedPGN, NParams, Params) ->
 
 recv_nmea_acknowledge_group_function(Tr) ->
     n2k_transport:recv(
-        Tr, {message, [126208]}, fun recv_nmea_acknowledge_group_function_handler/2, []
+        Tr, {message, [126208], ignore}, fun recv_nmea_acknowledge_group_function_handler/2, []
     ).
 
 recv_nmea_acknowledge_group_function_handler(Msg, _State) ->

@@ -2,7 +2,7 @@
 -module(n2k_transport).
 
 -export([open_raw_ip/3, open_raw_ip/4]).
--export([send/2, recv/4, close/1]).
+-export([send/2, send_fast/2, recv/4, close/1]).
 
 -export_type([transport/0]).
 
@@ -63,12 +63,21 @@ open_raw_ip(tcp, Address, Port, _) ->
 send(#n2k_transport{sendf = SendF}, Frame) ->
     SendF(Frame).
 
+send_fast(#n2k_transport{sendf = SendF}, {CanIdInt, FramesData}) ->
+    lists:foreach(
+        fun(FrameData) ->
+            ok = SendF({-1, CanIdInt, FrameData}),
+            timer:sleep(1)
+        end,
+        FramesData
+    ).
+
 close(#n2k_transport{closef = CloseF}) ->
     CloseF().
 
 -spec recv(
     transport(),
-    binary | frame | {message, PGNs :: [integer()] | all},
+    binary | frame | {message, PGNs :: [integer()] | all, Other :: frame | ignore},
     HandleF :: fun(
         (
             {binary, binary()} | {frame, n2k:frame()} | {message, n2k:message()} | term(),
@@ -108,7 +117,7 @@ init_recv(Format, HandleF, HandleInitS) ->
                 end,
                 HandleInitS
             };
-        {message, PGNs} ->
+        {message, PGNs, Other} ->
             {
                 fun
                     (_, {done, _} = Done) ->
@@ -130,6 +139,13 @@ init_recv(Format, HandleF, HandleInitS) ->
                                         end;
                                     {error, _, N2kS1} ->
                                         {N2kS1, HandleS0}
+                                end;
+                            false when Other == frame ->
+                                case HandleF({frame, Frame}, HandleS0) of
+                                    {done, _} = Done ->
+                                        Done;
+                                    HandleS1 ->
+                                        {N2kS0, HandleS1}
                                 end;
                             false ->
                                 {N2kS0, HandleS0}

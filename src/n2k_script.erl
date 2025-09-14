@@ -111,19 +111,7 @@ opt_match() ->
             "Only inlcude messages that match the given expression"
     }.
 
-do_convert(
-    Env,
-    CmdStack,
-    Quiet,
-    InFmt0,
-    OutFmt,
-    PStr,
-    SrcIds,
-    PGNs,
-    Expr,
-    OutFName,
-    InFName
-) ->
+do_convert(Env, CmdStack, Quiet, InFmt0, OutFmt, PStr, SrcIds, PGNs, Expr, OutFName, InFName) ->
     try
         InFmt =
             case InFmt0 of
@@ -146,11 +134,7 @@ do_convert(
         {CloseF, WriteF} =
             if
                 OutFName /= undefined ->
-                    {ok, OutFd} =
-                        file:open(
-                            OutFName,
-                            [write, raw, binary, delayed_write]
-                        ),
+                    {ok, OutFd} = file:open(OutFName, [write, raw, binary, delayed_write]),
                     {fun() -> file:close(OutFd) end, fun(Bin) -> file:write(OutFd, Bin) end};
                 true ->
                     {fun() -> ok end, fun(Bin) -> io:put_chars(Bin) end}
@@ -193,11 +177,7 @@ do_convert(
                             (Frame, State0) when element(2, Frame) /= 'service' ->
                                 case n2k:decode_nmea(Frame, State0) of
                                     {true, Message, State1} ->
-                                        counters:add(
-                                            Cnts,
-                                            ?CNT_MESSAGES,
-                                            1
-                                        ),
+                                        counters:add(Cnts, ?CNT_MESSAGES, 1),
                                         PrettyF(Message),
                                         State1;
                                     {false, State1} ->
@@ -206,11 +186,7 @@ do_convert(
                                         frame_lost(Src, PGN, Order, ETab, Cnts),
                                         State1;
                                     {error, Error, State1} ->
-                                        io:format(
-                                            standard_error,
-                                            n2k:fmt_error(Error),
-                                            []
-                                        ),
+                                        io:format(standard_error, n2k:fmt_error(Error), []),
                                         State1
                                 end;
                             (SrvRec, State0) when InFmt == can ->
@@ -259,8 +235,7 @@ do_convert(
                                 X = lists:keysort(1, X0),
                                 Y = lists:keysort(1, Y0),
                                 Z = lists:keysort(1, Z0),
-                                Merged =
-                                    n2k_devices:merge_device_information(X, Y, Z),
+                                Merged = n2k_devices:merge_device_information(X, Y, Z),
                                 n2k_devices:print_devices(WriteF, Merged);
                             (_, S) ->
                                 S
@@ -273,11 +248,7 @@ do_convert(
                             (Frame, State0) when element(2, Frame) /= 'service' ->
                                 case n2k:decode_nmea(Frame, State0) of
                                     {true, _Message, State1} ->
-                                        counters:add(
-                                            Cnts,
-                                            ?CNT_MESSAGES,
-                                            1
-                                        ),
+                                        counters:add(Cnts, ?CNT_MESSAGES, 1),
                                         State1;
                                     {false, State1} ->
                                         State1;
@@ -285,19 +256,11 @@ do_convert(
                                         frame_lost(Src, PGN, Order, ETab, Cnts),
                                         State1;
                                     {error, Error, State1} ->
-                                        io:format(
-                                            standard_error,
-                                            n2k:fmt_error(Error),
-                                            []
-                                        ),
+                                        io:format(standard_error, n2k:fmt_error(Error), []),
                                         State1
                                 end;
                             (_SrvRec, State0) when InFmt == can ->
-                                counters:add(
-                                    Cnts,
-                                    ?CNT_MESSAGES,
-                                    1
-                                ),
+                                counters:add(Cnts, ?CNT_MESSAGES, 1),
                                 State0
                         end,
                         n2k:decode_nmea_init()
@@ -377,11 +340,7 @@ do_convert(
                 end,
             if
                 not IsEpipe ->
-                    io:format(
-                        standard_error,
-                        "** ~p\n  ~p\n",
-                        [_Error, StackTrace]
-                    ),
+                    io:format(standard_error, "** ~p\n  ~p\n", [_Error, StackTrace]),
                     halt(1);
                 true ->
                     halt(0)
@@ -421,6 +380,7 @@ cmd_request() ->
             [
                 cmd_dump(),
                 cmd_get_devices(),
+                cmd_request_pgn(),
                 cmd_maretron()
             ]
     }.
@@ -483,9 +443,9 @@ do_dump(_Env, CmdStack, Expr, OutFmt) ->
     [ReqCmd | _] = CmdStack,
     {_Cmd, Opts} = ReqCmd,
     S = #dump{outfmt = OutFmt, expr = Expr},
-    do_n2k_request(Opts, do_dump_fun(S)).
+    do_n2k_request(Opts, do_dump_req(S)).
 
-do_dump_fun(S) ->
+do_dump_req(S) ->
     fun(Transport) ->
         n2k_transport:recv(Transport, binary, fun dump_raw_line/2, S)
     end.
@@ -542,14 +502,50 @@ cmd_get_devices() ->
     }.
 
 do_get_devices(_Env, CmdStack, Timeout) ->
-    [ReqCmd | _] = CmdStack,
-    {_Cmd, Opts} = ReqCmd,
-    do_n2k_request(Opts, do_get_devices_fun(Timeout)).
+    [{_Cmd, Opts} | _] = CmdStack,
+    do_n2k_request(Opts, do_get_devices_req(Timeout)).
 
-do_get_devices_fun(Timeout) ->
+do_get_devices_req(Timeout) ->
     fun(Transport) ->
         {ok, Res} = n2k_devices:get_devices(Transport, Timeout),
         n2k_devices:print_devices(fun io:put_chars/1, Res)
+    end.
+
+cmd_request_pgn() ->
+    #{
+        cmd => "request-pgn",
+        help =>
+            {doc, [
+                {p, "Request a PGN from a device (or 255)"}
+            ]},
+        opts => [device_opt()],
+        args => [#{name => pgn, metavar => "PGN", type => int}],
+        cb => fun do_request_pgn/4
+    }.
+
+do_request_pgn(_Env, CmdStack, Device, PGN) ->
+    [{_Cmd, Opts} | _] = CmdStack,
+    do_n2k_request(Opts, do_request_pgn_req(Device, PGN)).
+
+do_request_pgn_req(Device, PGN) ->
+    fun(Transport) ->
+        Frame = n2k:isoRequest(Device, PGN),
+        n2k_transport:send(Transport, Frame),
+        n2k_transport:recv(Transport, {message, [PGN], ignore}, fun request_pgn_fun/2, Device)
+    end.
+
+request_pgn_fun({message, Message}, Device) ->
+    case Message of
+        {_, {_Pri, _PGN, Src, _Dst}, _} when Src == Device orelse Device == 255 ->
+            io:put_chars(n2k:fmt_nmea_message(Message, false)),
+            if
+                Device /= 255 ->
+                    {done, ok};
+                true ->
+                    Device
+            end;
+        _ ->
+            Device
     end.
 
 cmd_maretron() ->
@@ -567,7 +563,14 @@ cmd_maretron() ->
 cmd_maretron_compass() ->
     #{
         cmd => "compass",
-        help => {doc, [{p, "Maretron compass-specific commands."}]},
+        help =>
+            {doc, [
+                {p, "Maretron compass-specific commands."},
+                {p,
+                    "The required option DEVICE is the N2K device number "
+                    "of the compass."}
+            ]},
+        opts => [device_opt()],
         required_cmd => true,
         cmds =>
             [
@@ -583,7 +586,6 @@ cmd_maretron_compass() ->
 cmd_maretron_compass_calibrate_deviation() ->
     #{
         cmd => "calibrate-deviation",
-        opts => [device_opt()],
         help =>
             {doc, [
                 {p, "Start the deviation calibration procedure."},
@@ -597,14 +599,14 @@ cmd_maretron_compass_calibrate_deviation() ->
                     " or failed."}
             ]},
 
-        cb => fun do_maretron_compass_calibrate_deviation/3
+        cb => fun do_maretron_compass_calibrate_deviation/2
     }.
 
-do_maretron_compass_calibrate_deviation(_Env, CmdStack, Device) ->
-    [_Compass, _Maretron, {_Cmd, Opts} | _] = CmdStack,
-    do_n2k_request(Opts, do_maretron_compass_calibrate_deviation_fun(Device)).
+do_maretron_compass_calibrate_deviation(_Env, CmdStack) ->
+    [{_, #{device := Device}} = _Compass, _Maretron, {_Cmd, Opts} | _] = CmdStack,
+    do_n2k_request(Opts, do_maretron_compass_calibrate_deviation_req(Device)).
 
-do_maretron_compass_calibrate_deviation_fun(Device) ->
+do_maretron_compass_calibrate_deviation_req(Device) ->
     fun(Transport) ->
         n2k_maretron:compass_start_calibration(Transport, Device),
         case
@@ -636,16 +638,15 @@ maretron_compass_calibration_status(Res) ->
 cmd_maretron_compass_get_last_calibration_status() ->
     #{
         cmd => "get-last-calibration-status",
-        opts => [device_opt()],
         help => {doc, [{p, "Get the last calibration status from the compass."}]},
-        cb => fun do_maretron_compass_get_last_calibration_status/3
+        cb => fun do_maretron_compass_get_last_calibration_status/2
     }.
 
-do_maretron_compass_get_last_calibration_status(_Env, CmdStack, Device) ->
-    [_Compass, _Maretron, {_Cmd, Opts} | _] = CmdStack,
-    do_n2k_request(Opts, do_maretron_compass_get_last_calibration_status_fun(Device)).
+do_maretron_compass_get_last_calibration_status(_Env, CmdStack) ->
+    [{_, #{device := Device}} = _Compass, _Maretron, {_Cmd, Opts} | _] = CmdStack,
+    do_n2k_request(Opts, do_maretron_compass_get_last_calibration_status_req(Device)).
 
-do_maretron_compass_get_last_calibration_status_fun(Device) ->
+do_maretron_compass_get_last_calibration_status_req(Device) ->
     fun(Transport) ->
         n2k_maretron:compass_resend_calibration_status(Transport, Device),
         case
@@ -664,7 +665,6 @@ cmd_maretron_compass_calibrate_installation_offset() ->
     #{
         cmd => "calibrate-installation-offset",
         opts => [
-            device_opt(),
             #{
                 long => "heading",
                 type => {int, [{0, 3599}]},
@@ -679,14 +679,14 @@ cmd_maretron_compass_calibrate_installation_offset() ->
                     "orientation and sets the heading reading for the current orientation "
                     "to HEADING."}
             ]},
-        cb => fun do_maretron_compass_calibrate_installaion_offset/4
+        cb => fun do_maretron_compass_calibrate_installaion_offset/3
     }.
 
-do_maretron_compass_calibrate_installaion_offset(_Env, CmdStack, Device, Heading) ->
-    [_Compass, _Maretron, {_Cmd, Opts} | _] = CmdStack,
-    do_n2k_request(Opts, do_maretron_compass_calibrate_installaion_offset_fun(Device, Heading)).
+do_maretron_compass_calibrate_installaion_offset(_Env, CmdStack, Heading) ->
+    [{_, #{device := Device}} = _Compass, _Maretron, {_Cmd, Opts} | _] = CmdStack,
+    do_n2k_request(Opts, do_maretron_compass_calibrate_installaion_offset_req(Device, Heading)).
 
-do_maretron_compass_calibrate_installaion_offset_fun(Device, Heading) ->
+do_maretron_compass_calibrate_installaion_offset_req(Device, Heading) ->
     fun(Transport) ->
         n2k_maretron:compass_calibrate_installation_offset(Transport, Device, Heading)
     end.
@@ -694,19 +694,18 @@ do_maretron_compass_calibrate_installaion_offset_fun(Device, Heading) ->
 cmd_maretron_compass_start_rate_of_turn_zeroing() ->
     #{
         cmd => "start-rate-of-turn-zeroing",
-        opts => [device_opt()],
         help =>
             {doc, [
                 {p, "Start the rate of turn zeroing."}
             ]},
-        cb => fun do_maretron_compass_start_rate_of_turn_zeroing/3
+        cb => fun do_maretron_compass_start_rate_of_turn_zeroing/2
     }.
 
-do_maretron_compass_start_rate_of_turn_zeroing(_Env, CmdStack, Device) ->
-    [_Compass, _Maretron, {_Cmd, Opts} | _] = CmdStack,
-    do_n2k_request(Opts, do_maretron_compass_start_rate_of_turn_zeroing_fun(Device)).
+do_maretron_compass_start_rate_of_turn_zeroing(_Env, CmdStack) ->
+    [{_, #{device := Device}} = _Compass, _Maretron, {_Cmd, Opts} | _] = CmdStack,
+    do_n2k_request(Opts, do_maretron_compass_start_rate_of_turn_zeroing_req(Device)).
 
-do_maretron_compass_start_rate_of_turn_zeroing_fun(Device) ->
+do_maretron_compass_start_rate_of_turn_zeroing_req(Device) ->
     fun(Transport) ->
         n2k_maretron:compass_start_rate_of_turn_zeroing(Transport, Device)
     end.
@@ -714,19 +713,18 @@ do_maretron_compass_start_rate_of_turn_zeroing_fun(Device) ->
 cmd_maretron_compass_cancel_rate_of_turn_zeroing() ->
     #{
         cmd => "cancel-rate-of-turn-zeroing",
-        opts => [device_opt()],
         help =>
             {doc, [
                 {p, "Start the rate of turn zeroing."}
             ]},
-        cb => fun do_maretron_compass_cancel_rate_of_turn_zeroing/3
+        cb => fun do_maretron_compass_cancel_rate_of_turn_zeroing/2
     }.
 
-do_maretron_compass_cancel_rate_of_turn_zeroing(_Env, CmdStack, Device) ->
-    [_Compass, _Maretron, {_Cmd, Opts} | _] = CmdStack,
-    do_n2k_request(Opts, do_maretron_compass_cancel_rate_of_turn_zeroing_fun(Device)).
+do_maretron_compass_cancel_rate_of_turn_zeroing(_Env, CmdStack) ->
+    [{_, #{device := Device}} = _Compass, _Maretron, {_Cmd, Opts} | _] = CmdStack,
+    do_n2k_request(Opts, do_maretron_compass_cancel_rate_of_turn_zeroing_req(Device)).
 
-do_maretron_compass_cancel_rate_of_turn_zeroing_fun(Device) ->
+do_maretron_compass_cancel_rate_of_turn_zeroing_req(Device) ->
     fun(Transport) ->
         n2k_maretron:compass_cancel_rate_of_turn_zeroing(Transport, Device)
     end.
@@ -735,7 +733,6 @@ cmd_maretron_compass_set_rate_of_turn_dampening() ->
     #{
         cmd => "set-rate-of-turn-damping",
         opts => [
-            device_opt(),
             #{
                 long => "period",
                 type => {int, [{100, 60000}]},
@@ -746,14 +743,14 @@ cmd_maretron_compass_set_rate_of_turn_dampening() ->
             {doc, [
                 {p, "Start the rate of turn zeroing."}
             ]},
-        cb => fun do_maretron_compass_set_rate_of_turn_dampening/4
+        cb => fun do_maretron_compass_set_rate_of_turn_dampening/3
     }.
 
-do_maretron_compass_set_rate_of_turn_dampening(_Env, CmdStack, Device, Period) ->
-    [_Compass, _Maretron, {_Cmd, Opts} | _] = CmdStack,
-    do_n2k_request(Opts, do_maretron_compass_set_rate_of_turn_dampening_fun(Device, Period)).
+do_maretron_compass_set_rate_of_turn_dampening(_Env, CmdStack, Period) ->
+    [{_, #{device := Device}} = _Compass, _Maretron, {_Cmd, Opts} | _] = CmdStack,
+    do_n2k_request(Opts, do_maretron_compass_set_rate_of_turn_dampening_req(Device, Period)).
 
-do_maretron_compass_set_rate_of_turn_dampening_fun(Device, Period) ->
+do_maretron_compass_set_rate_of_turn_dampening_req(Device, Period) ->
     fun(Transport) ->
         n2k_maretron:compass_set_rate_of_turn_dampening(Transport, Device, Period)
     end.
@@ -778,9 +775,9 @@ cmd_maretron_get_depth() ->
 
 do_maretron_get_depth(_Env, CmdStack, Device) ->
     [_TankMeter, _Maretron, {_Cmd, Opts} | _] = CmdStack,
-    do_n2k_request(Opts, do_maretron_get_depth_fun(Device)).
+    do_n2k_request(Opts, do_maretron_get_depth_req(Device)).
 
-do_maretron_get_depth_fun(Device) ->
+do_maretron_get_depth_req(Device) ->
     fun(Transport) ->
         case n2k_maretron:get_depth(Transport, Device) of
             {ok, Msg} ->
@@ -792,16 +789,16 @@ device_opt() ->
     #{
         short => $d,
         long => "device",
-        type => int,
+        type => {int, [{0, 255}]},
         required => true
     }.
 
-do_n2k_request(Opts, F) ->
+do_n2k_request(Opts, ReqF) ->
     #{protocol := Proto, address := Address, port := Port} = Opts,
     LPort = maps:get(lport, Opts, Port),
     case n2k_transport:open_raw_ip(Proto, Address, Port, LPort) of
         {ok, Transport} ->
-            F(Transport),
+            ReqF(Transport),
             halt(0);
         {error, Error} ->
             ErrStr =
