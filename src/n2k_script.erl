@@ -5,7 +5,7 @@
 -module(n2k_script).
 
 -export([main/1]).
--export([parse_expr/1]).
+-export([parse_expr/1, eval/2]).
 
 -define(CNT_MESSAGES, 1).
 -define(CNT_FAST_PACKET_ERRORS, 2).
@@ -1015,7 +1015,7 @@ get_integer([H | T], Acc) when ?is_int(H) ->
 get_integer(T, Acc) ->
     {list_to_integer(lists:reverse(Acc)), T}.
 
--spec eval(expr(), n2k:frame()) -> boolean().
+-spec eval(expr(), n2k:frame() | n2k:message()) -> boolean().
 eval(Expr, Frame) ->
     case Expr of
         {'or', ExprL, ExprR} ->
