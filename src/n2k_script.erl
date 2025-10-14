@@ -12,6 +12,7 @@
 -define(CNT_SIZE, 2).
 
 main(Args) ->
+    io:setopts([{encoding, unicode}]),
     eclip:parse(Args, spec(), #{}).
 
 spec() ->

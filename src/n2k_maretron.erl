@@ -7,7 +7,7 @@
     compass_calibrate_installation_offset/3,
     compass_start_rate_of_turn_zeroing/2,
     compass_cancel_rate_of_turn_zeroing/2,
-    compass_set_rate_of_turn_dampening/3
+    compass_set_rate_of_turn_damping/3
 ]).
 
 -define(MARETRON_VENDOR_AND_CODE, 16#9889).
@@ -23,8 +23,8 @@
 -define(CALIBRATION_FAILED, 2).
 -define(RESEND_CALIBRATION_STATUS_COMMAND, 16#50).
 -define(INSTALLATION_OFFSET_COMMAND, 16#24).
--define(RATE_OF_TURN_CONFIGURATION_COMMAND, 16#5E).
--define(RATE_OF_TURN_SET_DAMPENING, 2).
+-define(RATE_OF_TURN_CONFIGURATION_COMMAND, 94).
+-define(RATE_OF_TURN_SET_DAMPING, 2).
 -define(RATE_OF_TURN_INITIATE_ZEROING, 17).
 -define(RATE_OF_TURN_CANCEL_ZEROING, 18).
 
@@ -137,10 +137,10 @@ compass_cancel_rate_of_turn_zeroing(Transport, Dst) ->
     n2k_transport:send_fast(Transport, n2k:encode_nmea_fast_message(CanId, Data, _Order = 1)),
     recv_nmea_acknowledge_group_function(Transport).
 
--spec compass_set_rate_of_turn_dampening(n2k_transport:transport(), integer(), integer()) ->
+-spec compass_set_rate_of_turn_damping(n2k_transport:transport(), integer(), integer()) ->
     ok | {error, {pgnErrorCode, PGNErrorCode :: atom()}}.
 %% erlfmt:ignore
-compass_set_rate_of_turn_dampening(Transport, Dst, PeriodMs) ->
+compass_set_rate_of_turn_damping(Transport, Dst, PeriodMs) ->
     Data =
         nmea_command_group_function_data(
             126720, 4,
@@ -148,7 +148,7 @@ compass_set_rate_of_turn_dampening(Transport, Dst, PeriodMs) ->
               2, ?SSC300_PROD_CODE:16/little-unsigned,
               3, ?SSC300_SW_CODE:16/little-unsigned,
               ?RATE_OF_TURN_CONFIGURATION_COMMAND,
-              ?RATE_OF_TURN_SET_DAMPENING,
+              ?RATE_OF_TURN_SET_DAMPING,
               PeriodMs:16/little-unsigned>>),
     CanId = {_Pri = 4, 126208, _Src = 95, Dst},
     n2k_transport:send_fast(Transport, n2k:encode_nmea_fast_message(CanId, Data, _Order = 1)),

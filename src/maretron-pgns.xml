@@ -12,13 +12,41 @@
     <LookupEnumeration Name='MARETRON_COMMAND' MaxValue='250'>
       <EnumPair Value='36' Name='Compass Installation Offset Calibration' />
       <EnumPair Value='80' Name='Compass Resend Calibration Status' />
-      <EnumPair Value='94' Name='Compass Rate of Turn Configuration' />
+      <EnumPair Value='93' Name='Compass Set Variation Source' />
+      <EnumPair Value='94' Name='Compass Rate of Turn Configuration' /> <!-- FIXME bad name, seems to be also installtion direction -->
       <EnumPair Value='240' Name='Compass Reset and Start Calibration' />
     </LookupEnumeration>
     <LookupEnumeration Name='MARETRON_RATE_OF_TURN_PARAMETER' MaxValue='250'>
-      <EnumPair Value='2' Name='Set Dampening Period'/>
+      <EnumPair Value='1' Name='Get Damping Period'/>
+      <EnumPair Value='2' Name='Set Damping Period'/>
       <EnumPair Value='17' Name='Initiate Zeroing' />
       <EnumPair Value='18' Name='Cancel Zeroing' />
+      <EnumPair Value='513' Name='Get Installation Direction' />
+      <EnumPair Value='514' Name='Set Installation Direction' />
+    </LookupEnumeration>
+    <LookupEnumeration Name='MARETRON_PRODUCT_CODE'>
+      <EnumPair Value='434' Name='SSC200' />
+      <EnumPair Value='2686' Name='SSC300' />
+    </LookupEnumeration>
+    <LookupEnumeration Name='MARETRON_SLAVE_RESPONSE_COMMAND'>
+      <EnumPair Value='93' Name='Variation Source' />
+      <EnumPair Value='94' Name='Compass Rate of Turn Configuration' />
+      <EnumPair Value='80' Name='Deviation Calibration Status' />
+      <EnumPair Value='252' Name='Information' />
+    </LookupEnumeration>
+    <LookupEnumeration Name='MARETRON_VARIATION_SOURCE'>
+      <EnumPair Value='0' Name='Manual' />
+      <EnumPair Value='1' Name='NMEA 2000' />
+      <EnumPair Value='2' Name='NMEA 0183' />
+      <EnumPair Value='3' Name='NMEA 2000 or NMEA 0183' />
+    </LookupEnumeration>
+    <LookupEnumeration Name='MARETRON_INSTALLATION_ORIENTATION'>
+      <EnumPair Value='1' Name='Normal' />
+      <EnumPair Value='2' Name='Upside down' />
+    </LookupEnumeration>
+    <LookupEnumeration Name='MARETRON_INSTALLATION_DIRECTION'>
+      <EnumPair Value='1' Name='Normal' />
+      <EnumPair Value='2' Name='Backward' />
     </LookupEnumeration>
   </LookupEnumerations>
   <PGNs>
@@ -79,7 +107,6 @@
           <Order>4</Order>
           <Id>productCode</Id>
           <Name>Product code</Name>
-          <Description>0x1b2=SSC200</Description>
           <BitLength>16</BitLength>
           <BitOffset>16</BitOffset>
           <BitStart>0</BitStart>
@@ -87,7 +114,8 @@
           <Signed>false</Signed>
           <RangeMin>0</RangeMin>
           <RangeMax>65533</RangeMax>
-          <FieldType>NUMBER</FieldType>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MARETRON_PRODUCT_CODE</LookupEnumeration>
         </Field>
         <Field>
           <Order>5</Order>
@@ -107,16 +135,12 @@
           <Order>6</Order>
           <Id>command</Id>
           <Name>Command</Name>
-          <Description>0x50=Deviation calibration result</Description>
           <BitLength>8</BitLength>
           <BitOffset>48</BitOffset>
           <BitStart>0</BitStart>
-          <Match>80</Match>
-          <Resolution>1</Resolution>
-          <Signed>false</Signed>
-          <RangeMin>0</RangeMin>
-          <RangeMax>253</RangeMax>
-          <FieldType>NUMBER</FieldType>
+          <Match>80</Match> <!-- Deviation Calibration Status -->
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MARETRON_SLAVE_RESPONSE_COMMAND</LookupEnumeration>
         </Field>
         <Field>
           <Order>7</Order>
@@ -134,6 +158,687 @@
         </Field>
       </Fields>
     </PGNInfo>
+
+<!-- 13:55:19.903 6  96  81 126720 manufacturerProprietaryFastPacketAddressable:manufacturerCode = Maretron; industryCode = Marine; data = <<126,10,1,0,252,0,18,"ROT.offset.Started">> -->
+
+    <PGNInfo>
+      <!-- Observed in traces -->
+      <PGN>126720</PGN>
+      <Id>maretronInformation</Id>
+      <Description>Maretron: Slave Response - Information Message</Description>
+      <Type>Fast</Type>
+      <Complete>true</Complete>
+      <FieldCount>7</FieldCount>
+      <Length>8</Length>
+      <Fields>
+        <Field>
+          <Order>1</Order>
+          <Id>manufacturerCode</Id>
+          <Name>Manufacturer Code</Name>
+          <Description>Maretron</Description>
+          <BitLength>11</BitLength>
+          <BitOffset>0</BitOffset>
+          <BitStart>0</BitStart>
+          <Match>137</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>2045</RangeMax>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MANUFACTURER_CODE</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>2</Order>
+          <Id>reserved</Id>
+          <Name>Reserved</Name>
+          <BitLength>2</BitLength>
+          <BitOffset>11</BitOffset>
+          <BitStart>3</BitStart>
+          <Resolution>1</Resolution>
+          <FieldType>RESERVED</FieldType>
+        </Field>
+        <Field>
+          <Order>3</Order>
+          <Id>industryCode</Id>
+          <Name>Industry Code</Name>
+          <Description>Marine Industry</Description>
+          <BitLength>3</BitLength>
+          <BitOffset>13</BitOffset>
+          <BitStart>5</BitStart>
+          <Match>4</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>6</RangeMax>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>INDUSTRY_CODE</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>4</Order>
+          <Id>productCode</Id>
+          <Name>Product code</Name>
+          <BitLength>16</BitLength>
+          <BitOffset>16</BitOffset>
+          <BitStart>0</BitStart>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>65533</RangeMax>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MARETRON_PRODUCT_CODE</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>5</Order>
+          <Id>softwareCode</Id>
+          <Name>Software code</Name>
+          <BitLength>16</BitLength>
+          <BitOffset>32</BitOffset>
+          <BitStart>0</BitStart>
+          <Match>1</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>65533</RangeMax>
+          <FieldType>NUMBER</FieldType>
+        </Field>
+        <Field>
+          <Order>6</Order>
+          <Id>command</Id>
+          <Name>Command</Name>
+          <BitLength>8</BitLength>
+          <BitOffset>48</BitOffset>
+          <BitStart>0</BitStart>
+          <Match>252</Match> <!-- Information -->
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MARETRON_SLAVE_RESPONSE_COMMAND</LookupEnumeration>
+        </Field>
+        <Field>
+          <!-- Only 0 observed.  Maybe ASCII/Unicode indicator (but backwards) ? -->
+          <Order>7</Order>
+          <Id>reserved</Id>
+          <Name>Reserved</Name>
+          <BitLength>8</BitLength>
+          <FieldType>RESERVED</FieldType>
+        </Field>
+        <Field>
+          <Order>8</Order>
+          <Id>text</Id>
+          <Name>Text</Name>
+          <BitLengthVariable>true</BitLengthVariable>
+          <FieldType>STRING_LZ</FieldType>
+        </Field>
+      </Fields>
+    </PGNInfo>
+
+    <PGNInfo>
+      <!-- Observed in traces -->
+      <PGN>126720</PGN>
+      <Id>maretronGetVariationConfigurationResponse</Id> <!-- FIXME: name.  sent as reply to SetVariation - source 255 means GET -->
+      <Description>Maretron: Slave Response - Get Variation Configuration</Description>
+      <Type>Fast</Type>
+      <Complete>true</Complete>
+      <FieldCount>7</FieldCount>
+      <Length>8</Length>
+      <Fields>
+        <Field>
+          <Order>1</Order>
+          <Id>manufacturerCode</Id>
+          <Name>Manufacturer Code</Name>
+          <Description>Maretron</Description>
+          <BitLength>11</BitLength>
+          <BitOffset>0</BitOffset>
+          <BitStart>0</BitStart>
+          <Match>137</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>2045</RangeMax>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MANUFACTURER_CODE</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>2</Order>
+          <Id>reserved</Id>
+          <Name>Reserved</Name>
+          <BitLength>2</BitLength>
+          <BitOffset>11</BitOffset>
+          <BitStart>3</BitStart>
+          <Resolution>1</Resolution>
+          <FieldType>RESERVED</FieldType>
+        </Field>
+        <Field>
+          <Order>3</Order>
+          <Id>industryCode</Id>
+          <Name>Industry Code</Name>
+          <Description>Marine Industry</Description>
+          <BitLength>3</BitLength>
+          <BitOffset>13</BitOffset>
+          <BitStart>5</BitStart>
+          <Match>4</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>6</RangeMax>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>INDUSTRY_CODE</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>4</Order>
+          <Id>productCode</Id>
+          <Name>Product code</Name>
+          <BitLength>16</BitLength>
+          <BitOffset>16</BitOffset>
+          <BitStart>0</BitStart>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>65533</RangeMax>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MARETRON_PRODUCT_CODE</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>5</Order>
+          <Id>softwareCode</Id>
+          <Name>Software code</Name>
+          <BitLength>16</BitLength>
+          <BitOffset>32</BitOffset>
+          <BitStart>0</BitStart>
+          <Match>1</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>65533</RangeMax>
+          <FieldType>NUMBER</FieldType>
+        </Field>
+        <Field>
+          <Order>6</Order>
+          <Id>command</Id>
+          <Name>Command</Name>
+          <BitLength>8</BitLength>
+          <BitOffset>48</BitOffset>
+          <BitStart>0</BitStart>
+          <Match>93</Match> <!-- Variation Source -->
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MARETRON_SLAVE_RESPONSE_COMMAND</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>7</Order>
+          <Id>source</Id>
+          <Name>Source</Name>
+          <BitLength>8</BitLength>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MARETRON_VARIATION_SOURCE</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>8</Order>
+          <Id>variation</Id>
+          <Name>Variation</Name>
+          <BitLength>16</BitLength>
+          <BitOffset>32</BitOffset>
+          <BitStart>0</BitStart>
+          <Unit>rad</Unit>
+          <Resolution>0.0001</Resolution>
+          <Signed>true</Signed>
+          <RangeMin>-3.2767</RangeMin>
+          <RangeMax>3.2765</RangeMax>
+          <FieldType>NUMBER</FieldType>
+          <PhysicalQuantity>ANGLE</PhysicalQuantity>
+        </Field>
+      </Fields>
+    </PGNInfo>
+
+    <PGNInfo>
+      <!-- Observed in traces -->
+      <PGN>126720</PGN>
+      <Id>maretronGetRateOfTurnConfigurationResponse</Id>
+      <Description>Maretron: Slave Response - Get Rate of Turn Configuration</Description>
+      <Type>Fast</Type>
+      <Complete>true</Complete>
+      <FieldCount>7</FieldCount>
+      <Length>8</Length>
+      <Fields>
+        <Field>
+          <Order>1</Order>
+          <Id>manufacturerCode</Id>
+          <Name>Manufacturer Code</Name>
+          <Description>Maretron</Description>
+          <BitLength>11</BitLength>
+          <BitOffset>0</BitOffset>
+          <BitStart>0</BitStart>
+          <Match>137</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>2045</RangeMax>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MANUFACTURER_CODE</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>2</Order>
+          <Id>reserved</Id>
+          <Name>Reserved</Name>
+          <BitLength>2</BitLength>
+          <BitOffset>11</BitOffset>
+          <BitStart>3</BitStart>
+          <Resolution>1</Resolution>
+          <FieldType>RESERVED</FieldType>
+        </Field>
+        <Field>
+          <Order>3</Order>
+          <Id>industryCode</Id>
+          <Name>Industry Code</Name>
+          <Description>Marine Industry</Description>
+          <BitLength>3</BitLength>
+          <BitOffset>13</BitOffset>
+          <BitStart>5</BitStart>
+          <Match>4</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>6</RangeMax>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>INDUSTRY_CODE</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>4</Order>
+          <Id>productCode</Id>
+          <Name>Product code</Name>
+          <BitLength>16</BitLength>
+          <BitOffset>16</BitOffset>
+          <BitStart>0</BitStart>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>65533</RangeMax>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MARETRON_PRODUCT_CODE</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>5</Order>
+          <Id>softwareCode</Id>
+          <Name>Software code</Name>
+          <BitLength>16</BitLength>
+          <BitOffset>32</BitOffset>
+          <BitStart>0</BitStart>
+          <Match>1</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>65533</RangeMax>
+          <FieldType>NUMBER</FieldType>
+        </Field>
+        <Field>
+          <Order>6</Order>
+          <Id>command</Id>
+          <Name>Command</Name>
+          <BitLength>8</BitLength>
+          <BitOffset>48</BitOffset>
+          <BitStart>0</BitStart>
+          <Match>94</Match> <!-- Compass Rate of Turn Configuration -->
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MARETRON_SLAVE_RESPONSE_COMMAND</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>6</Order>
+          <Id>command</Id>
+          <Name>Command</Name>
+          <BitLength>16</BitLength>
+          <BitOffset>48</BitOffset>
+          <BitStart>0</BitStart>
+          <Match>1</Match> <!-- Get Rate of Turn Configuration -->
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MARETRON_RATE_OF_TURN_PARAMETER</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>7</Order>
+          <Id>rateOfTurnDamping</Id>
+          <Name>Value</Name>
+          <BitLength>16</BitLength>
+          <FieldType>NUMBER</FieldType>
+           <Resolution>0.001</Resolution>
+          <RangeMin>100</RangeMin>
+          <RangeMax>60000</RangeMax>
+        </Field>
+      </Fields>
+    </PGNInfo>
+
+    <PGNInfo>
+      <!-- Observed in traces -->
+      <PGN>126720</PGN>
+      <Id>maretronSetRateOfTurnConfigurationResponse</Id>
+      <Description>Maretron: Slave Response - Set Rate of Turn Configuration</Description>
+      <Type>Fast</Type>
+      <Complete>true</Complete>
+      <FieldCount>7</FieldCount>
+      <Length>8</Length>
+      <Fields>
+        <Field>
+          <Order>1</Order>
+          <Id>manufacturerCode</Id>
+          <Name>Manufacturer Code</Name>
+          <Description>Maretron</Description>
+          <BitLength>11</BitLength>
+          <BitOffset>0</BitOffset>
+          <BitStart>0</BitStart>
+          <Match>137</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>2045</RangeMax>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MANUFACTURER_CODE</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>2</Order>
+          <Id>reserved</Id>
+          <Name>Reserved</Name>
+          <BitLength>2</BitLength>
+          <BitOffset>11</BitOffset>
+          <BitStart>3</BitStart>
+          <Resolution>1</Resolution>
+          <FieldType>RESERVED</FieldType>
+        </Field>
+        <Field>
+          <Order>3</Order>
+          <Id>industryCode</Id>
+          <Name>Industry Code</Name>
+          <Description>Marine Industry</Description>
+          <BitLength>3</BitLength>
+          <BitOffset>13</BitOffset>
+          <BitStart>5</BitStart>
+          <Match>4</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>6</RangeMax>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>INDUSTRY_CODE</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>4</Order>
+          <Id>productCode</Id>
+          <Name>Product code</Name>
+          <BitLength>16</BitLength>
+          <BitOffset>16</BitOffset>
+          <BitStart>0</BitStart>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>65533</RangeMax>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MARETRON_PRODUCT_CODE</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>5</Order>
+          <Id>softwareCode</Id>
+          <Name>Software code</Name>
+          <BitLength>16</BitLength>
+          <BitOffset>32</BitOffset>
+          <BitStart>0</BitStart>
+          <Match>1</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>65533</RangeMax>
+          <FieldType>NUMBER</FieldType>
+        </Field>
+        <Field>
+          <Order>6</Order>
+          <Id>command</Id>
+          <Name>Command</Name>
+          <BitLength>8</BitLength>
+          <BitOffset>48</BitOffset>
+          <BitStart>0</BitStart>
+          <Match>94</Match> <!-- Compass Rate of Turn Configuration -->
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MARETRON_SLAVE_RESPONSE_COMMAND</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>6</Order>
+          <Id>command</Id>
+          <Name>Command</Name>
+          <BitLength>16</BitLength>
+          <BitOffset>48</BitOffset>
+          <BitStart>0</BitStart>
+          <Match>2</Match> <!-- Set Rate of Turn Configuration -->
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MARETRON_RATE_OF_TURN_PARAMETER</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>7</Order>
+          <Id>rateOfTurnDamping</Id>
+          <Name>Value</Name>
+          <BitLength>16</BitLength>
+          <FieldType>NUMBER</FieldType>
+           <Resolution>0.001</Resolution>
+          <RangeMin>100</RangeMin>
+          <RangeMax>60000</RangeMax>
+        </Field>
+      </Fields>
+    </PGNInfo>
+
+    <PGNInfo>
+      <!-- Observed in traces -->
+      <PGN>126720</PGN>
+      <Id>maretronGetInstallationConfigurationResponse</Id>
+      <Description>Maretron: Slave Response - Get Installation Configuration</Description>
+      <Type>Fast</Type>
+      <Complete>true</Complete>
+      <FieldCount>7</FieldCount>
+      <Length>8</Length>
+      <Fields>
+        <Field>
+          <Order>1</Order>
+          <Id>manufacturerCode</Id>
+          <Name>Manufacturer Code</Name>
+          <Description>Maretron</Description>
+          <BitLength>11</BitLength>
+          <BitOffset>0</BitOffset>
+          <BitStart>0</BitStart>
+          <Match>137</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>2045</RangeMax>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MANUFACTURER_CODE</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>2</Order>
+          <Id>reserved</Id>
+          <Name>Reserved</Name>
+          <BitLength>2</BitLength>
+          <BitOffset>11</BitOffset>
+          <BitStart>3</BitStart>
+          <Resolution>1</Resolution>
+          <FieldType>RESERVED</FieldType>
+        </Field>
+        <Field>
+          <Order>3</Order>
+          <Id>industryCode</Id>
+          <Name>Industry Code</Name>
+          <Description>Marine Industry</Description>
+          <BitLength>3</BitLength>
+          <BitOffset>13</BitOffset>
+          <BitStart>5</BitStart>
+          <Match>4</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>6</RangeMax>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>INDUSTRY_CODE</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>4</Order>
+          <Id>productCode</Id>
+          <Name>Product code</Name>
+          <BitLength>16</BitLength>
+          <BitOffset>16</BitOffset>
+          <BitStart>0</BitStart>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>65533</RangeMax>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MARETRON_PRODUCT_CODE</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>5</Order>
+          <Id>softwareCode</Id>
+          <Name>Software code</Name>
+          <BitLength>16</BitLength>
+          <BitOffset>32</BitOffset>
+          <BitStart>0</BitStart>
+          <Match>1</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>65533</RangeMax>
+          <FieldType>NUMBER</FieldType>
+        </Field>
+        <Field>
+          <Order>6</Order>
+          <Id>command</Id>
+          <Name>Command</Name>
+          <BitLength>8</BitLength>
+          <BitOffset>48</BitOffset>
+          <BitStart>0</BitStart>
+          <Match>94</Match> <!-- Compass Rate of Turn Configuration -->
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MARETRON_SLAVE_RESPONSE_COMMAND</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>6</Order>
+          <Id>command</Id>
+          <Name>Command</Name>
+          <BitLength>16</BitLength>
+          <BitOffset>48</BitOffset>
+          <BitStart>0</BitStart>
+          <Match>513</Match> <!-- Get Installation Configuration -->
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MARETRON_RATE_OF_TURN_PARAMETER</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>7</Order>
+          <Id>orientation</Id>
+          <Name>Orientation</Name>
+          <BitLength>16</BitLength>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MARETRON_INSTALLATION_ORIENTATION</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>8</Order>
+          <Id>direction</Id>
+          <Name>Direction</Name>
+          <BitLength>16</BitLength>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MARETRON_INSTALLATION_DIRECTION</LookupEnumeration>
+        </Field>
+      </Fields>
+    </PGNInfo>
+
+
+    <PGNInfo>
+      <PGN>126720</PGN>
+      <Id>maretronUnknownSlaveResponse</Id>
+      <Description>Maretron: Slave Response - Unknown</Description>
+      <Explanation>A slave response that hasn't yet been reverse engineered.</Explanation>
+      <Type>Fast</Type>
+      <Complete>false</Complete>
+      <FieldCount>7</FieldCount>
+      <Length>8</Length>
+      <Fields>
+        <Field>
+          <Order>1</Order>
+          <Id>manufacturerCode</Id>
+          <Name>Manufacturer Code</Name>
+          <Description>Maretron</Description>
+          <BitLength>11</BitLength>
+          <BitOffset>0</BitOffset>
+          <BitStart>0</BitStart>
+          <Match>137</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>2045</RangeMax>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MANUFACTURER_CODE</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>2</Order>
+          <Id>reserved</Id>
+          <Name>Reserved</Name>
+          <BitLength>2</BitLength>
+          <BitOffset>11</BitOffset>
+          <BitStart>3</BitStart>
+          <Resolution>1</Resolution>
+          <FieldType>RESERVED</FieldType>
+        </Field>
+        <Field>
+          <Order>3</Order>
+          <Id>industryCode</Id>
+          <Name>Industry Code</Name>
+          <Description>Marine Industry</Description>
+          <BitLength>3</BitLength>
+          <BitOffset>13</BitOffset>
+          <BitStart>5</BitStart>
+          <Match>4</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>6</RangeMax>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>INDUSTRY_CODE</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>4</Order>
+          <Id>productCode</Id>
+          <Name>Product code</Name>
+          <BitLength>16</BitLength>
+          <BitOffset>16</BitOffset>
+          <BitStart>0</BitStart>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>65533</RangeMax>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MARETRON_PRODUCT_CODE</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>5</Order>
+          <Id>softwareCode</Id>
+          <Name>Software code</Name>
+          <BitLength>16</BitLength>
+          <BitOffset>32</BitOffset>
+          <BitStart>0</BitStart>
+          <Match>1</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>65533</RangeMax>
+          <FieldType>NUMBER</FieldType>
+        </Field>
+        <Field>
+          <Order>6</Order>
+          <Id>command</Id>
+          <Name>Command</Name>
+          <BitLength>8</BitLength>
+          <BitOffset>48</BitOffset>
+          <BitStart>0</BitStart>
+          <FieldType>NUMBER</FieldType>
+        </Field>
+        <Field>
+          <Order>7</Order>
+          <Id>data</Id>
+          <Name>Data</Name>
+          <BitLength>1784</BitLength>
+          <FieldType>BINARY</FieldType>
+        </Field>
+      </Fields>
+    </PGNInfo>
+
+
     <PGNInfo>
       <PGN>126208</PGN>
       <Id>maretronCompassResetStartCalibration</Id>
@@ -254,11 +959,11 @@
         </Field>
         <Field>
           <Order>9</Order>
-          <Id>ssc300ProductCode</Id>
+          <Id>productCode</Id>
           <Name>Value</Name>
           <BitLength>16</BitLength>
-<!--          <Match>2686</Match> -->
-          <FieldType>NUMBER</FieldType>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MARETRON_PRODUCT_CODE</LookupEnumeration>
         </Field>
         <Field>
           <Order>10</Order>
@@ -283,17 +988,16 @@
         </Field>
         <Field>
           <Order>12</Order>
-          <Id>maretronCommand</Id>
+          <Id>command</Id>
           <Name>Value</Name>
           <BitLength>8</BitLength>
-          <Match>240</Match>
+          <Match>240</Match> <!-- Compass Reset and Start Calibration -->
           <FieldType>LOOKUP</FieldType>
           <LookupEnumeration>MARETRON_COMMAND</LookupEnumeration>
         </Field>
       </Fields>
     </PGNInfo>
     <PGNInfo>
-      <!-- NOTE: this is a guess based on NMEA0183 docs -->
       <PGN>126208</PGN>
       <Id>maretronCompassStartRateOfTurnZeroing</Id>
       <Description>NMEA - Command group function - Maretron Proprietary Start Rate of Turn Zeroing</Description>
@@ -413,11 +1117,11 @@
         </Field>
         <Field>
           <Order>9</Order>
-          <Id>ssc300ProductCode</Id>
+          <Id>productCode</Id>
           <Name>Value</Name>
           <BitLength>16</BitLength>
-<!--          <Match>2686</Match> -->
-          <FieldType>NUMBER</FieldType>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MARETRON_PRODUCT_CODE</LookupEnumeration>
         </Field>
         <Field>
           <Order>10</Order>
@@ -442,10 +1146,10 @@
         </Field>
         <Field>
           <Order>12</Order>
-          <Id>maretronCommand</Id>
+          <Id>command</Id>
           <Name>Value</Name>
           <BitLength>8</BitLength>
-          <Match>94</Match>
+          <Match>94</Match> <!-- Compass Rate of Turn Configuration -->
           <FieldType>LOOKUP</FieldType>
           <LookupEnumeration>MARETRON_COMMAND</LookupEnumeration>
         </Field>
@@ -453,15 +1157,14 @@
           <Order>13</Order>
           <Id>maretronRateOfTurnParameter</Id>
           <Name>Value</Name>
-          <BitLength>8</BitLength>
-          <Match>17</Match>
+          <BitLength>16</BitLength>
+          <Match>17</Match> <!-- Initiate Zeroing -->
           <FieldType>LOOKUP</FieldType>
           <LookupEnumeration>MARETRON_RATE_OF_TURN_PARAMETER</LookupEnumeration>
         </Field>
       </Fields>
     </PGNInfo>
     <PGNInfo>
-      <!-- NOTE: this is a guess based on NMEA0183 docs -->
       <PGN>126208</PGN>
       <Id>maretronCompassCancelRateOfTurnZeroing</Id>
       <Description>NMEA - Command group function - Maretron Proprietary Cancel Rate of Turn Zeroing</Description>
@@ -581,11 +1284,11 @@
         </Field>
         <Field>
           <Order>9</Order>
-          <Id>ssc300ProductCode</Id>
+          <Id>productCode</Id>
           <Name>Value</Name>
           <BitLength>16</BitLength>
-<!--          <Match>2686</Match> -->
-          <FieldType>NUMBER</FieldType>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MARETRON_PRODUCT_CODE</LookupEnumeration>
         </Field>
         <Field>
           <Order>10</Order>
@@ -610,29 +1313,195 @@
         </Field>
         <Field>
           <Order>12</Order>
-          <Id>maretronCommand</Id>
+          <Id>command</Id>
           <Name>Value</Name>
           <BitLength>8</BitLength>
-          <Match>94</Match>
+          <Match>94</Match> <!-- Compass Rate of Turn Configuration -->
           <FieldType>LOOKUP</FieldType>
           <LookupEnumeration>MARETRON_COMMAND</LookupEnumeration>
         </Field>
         <Field>
           <Order>13</Order>
-          <Id>maretronRateOfTurnParameter</Id>
+          <Id>rateOfTurnParameter</Id>
           <Name>Value</Name>
-          <BitLength>8</BitLength>
-          <Match>18</Match>
+          <BitLength>16</BitLength>
+          <Match>18</Match> <!-- Cancel Zeroing -->
           <FieldType>LOOKUP</FieldType>
           <LookupEnumeration>MARETRON_RATE_OF_TURN_PARAMETER</LookupEnumeration>
         </Field>
       </Fields>
     </PGNInfo>
     <PGNInfo>
-      <!-- NOTE: this is a guess based on NMEA0183 docs -->
       <PGN>126208</PGN>
-      <Id>maretronCompassSetRateOfTurnDampening</Id>
-      <Description>NMEA - Command group function - Maretron Proprietary Set Rate of Turn Dampening</Description>
+      <Id>maretronCompassGetRateOfTurnDamping</Id>
+      <Description>NMEA - Command group function - Maretron Proprietary Get Rate of Turn Damping</Description>
+      <Explanation>This command causes the SSC300 to send its configured rate of turn damping period in .</Explanation>
+      <URL>https://www.maretron.com/support/manuals/SSC300UM_1.0.pdf</URL>
+      <Type>Fast</Type>
+      <Complete>true</Complete>
+      <FieldCount>12</FieldCount>
+      <MinLength>6</MinLength>
+      <TransmissionIrregular>true</TransmissionIrregular>
+      <Fields>
+        <Field>
+          <Order>1</Order>
+          <Id>functionCode</Id>
+          <Name>Function Code</Name>
+          <Description>Command</Description>
+          <BitLength>8</BitLength>
+          <BitOffset>0</BitOffset>
+          <BitStart>0</BitStart>
+          <Match>1</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>253</RangeMax>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>GROUP_FUNCTION</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>2</Order>
+          <Id>pgn</Id>
+          <Name>PGN</Name>
+          <Description>Commanded PGN</Description>
+          <BitLength>24</BitLength>
+          <BitOffset>8</BitOffset>
+          <BitStart>0</BitStart>
+          <Match>126720</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>16777213</RangeMax>
+          <FieldType>NUMBER</FieldType>
+        </Field>
+        <Field>
+          <Order>3</Order>
+          <Id>priority</Id>
+          <Name>Priority</Name>
+          <BitLength>4</BitLength>
+          <BitOffset>32</BitOffset>
+          <BitStart>0</BitStart>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>13</RangeMax>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>PRIORITY</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>4</Order>
+          <Id>reserved</Id>
+          <Name>Reserved</Name>
+          <BitLength>4</BitLength>
+          <BitOffset>36</BitOffset>
+          <BitStart>4</BitStart>
+          <Resolution>1</Resolution>
+          <FieldType>RESERVED</FieldType>
+        </Field>
+        <Field>
+          <Order>5</Order>
+          <Id>numberOfParameters</Id>
+          <Name>Number of Parameters</Name>
+          <Description>How many parameter pairs will follow</Description>
+          <BitLength>8</BitLength>
+          <BitOffset>40</BitOffset>
+          <BitStart>0</BitStart>
+          <Match>4</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>253</RangeMax>
+          <FieldType>NUMBER</FieldType>
+        </Field>
+        <Field>
+          <Order>6</Order>
+          <Id>parameter</Id>
+          <Name>Parameter</Name>
+          <Description>Parameter index</Description>
+          <BitLength>8</BitLength>
+          <BitOffset>48</BitOffset>
+          <BitStart>0</BitStart>
+          <Match>1</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>253</RangeMax>
+          <FieldType>NUMBER</FieldType>
+        </Field>
+        <Field>
+          <Order>7</Order>
+          <Id>maretronVendorIdAndIndustryCode</Id>
+          <BitLength>16</BitLength>
+          <Name>Value</Name>
+          <Match>39049</Match>
+          <FieldType>NUMBER</FieldType>
+        </Field>
+        <Field>
+          <Order>8</Order>
+          <Id>parameter</Id>
+          <Name>Parameter</Name>
+          <Description>Parameter index</Description>
+          <BitLength>8</BitLength>
+          <Match>2</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>253</RangeMax>
+          <FieldType>NUMBER</FieldType>
+        </Field>
+        <Field>
+          <Order>9</Order>
+          <Id>productCode</Id>
+          <Name>Value</Name>
+          <BitLength>16</BitLength>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MARETRON_PRODUCT_CODE</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>10</Order>
+          <Id>parameter</Id>
+          <Name>Parameter</Name>
+          <Description>Parameter index</Description>
+          <BitLength>8</BitLength>
+          <Match>3</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>253</RangeMax>
+          <FieldType>NUMBER</FieldType>
+        </Field>
+        <Field>
+          <Order>11</Order>
+          <Id>softwareCode</Id>
+          <Name>Value</Name>
+          <BitLength>16</BitLength>
+          <Match>1</Match>
+          <FieldType>NUMBER</FieldType>
+        </Field>
+        <Field>
+          <Order>12</Order>
+          <Id>command</Id>
+          <Name>Value</Name>
+          <BitLength>8</BitLength>
+          <Match>94</Match> <!-- Compass Rate of Turn Configuration -->
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MARETRON_COMMAND</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>13</Order>
+          <Id>rateOfTurnParameter</Id>
+          <Name>Value</Name>
+          <BitLength>16</BitLength>
+          <Match>1</Match> <!-- Get Damping Period -->
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MARETRON_RATE_OF_TURN_PARAMETER</LookupEnumeration>
+        </Field>
+      </Fields>
+    </PGNInfo>
+    <PGNInfo>
+      <PGN>126208</PGN>
+      <Id>maretronCompassSetRateOfTurnDamping</Id>
+      <Description>NMEA - Command group function - Maretron Proprietary Set Rate of Turn Damping</Description>
       <Explanation>This command causes the SSC300 to use a rate of turn damping rate corresponding to the value programmed in "damping period". The damping period is programmable from 100 to 60000, which represents 100ms to 60 seconds.</Explanation>
       <URL>https://www.maretron.com/support/manuals/SSC300UM_1.0.pdf</URL>
       <Type>Fast</Type>
@@ -749,11 +1618,11 @@
         </Field>
         <Field>
           <Order>9</Order>
-          <Id>ssc300ProductCode</Id>
+          <Id>productCode</Id>
           <Name>Value</Name>
           <BitLength>16</BitLength>
-<!--          <Match>2686</Match> -->
-          <FieldType>NUMBER</FieldType>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MARETRON_PRODUCT_CODE</LookupEnumeration>
         </Field>
         <Field>
           <Order>10</Order>
@@ -778,37 +1647,387 @@
         </Field>
         <Field>
           <Order>12</Order>
-          <Id>maretronCommand</Id>
+          <Id>command</Id>
           <Name>Value</Name>
           <BitLength>8</BitLength>
-          <Match>94</Match>
+          <Match>94</Match> <!-- Compass Rate of Turn Configuration -->
           <FieldType>LOOKUP</FieldType>
           <LookupEnumeration>MARETRON_COMMAND</LookupEnumeration>
         </Field>
         <Field>
           <Order>13</Order>
-          <Id>maretronRateOfTurnParameter</Id>
+          <Id>rateOfTurnParameter</Id>
           <Name>Value</Name>
-          <BitLength>8</BitLength>
-          <Match>2</Match>
+          <BitLength>16</BitLength>
+          <Match>2</Match> <!-- Set Damping Period -->
           <FieldType>LOOKUP</FieldType>
           <LookupEnumeration>MARETRON_RATE_OF_TURN_PARAMETER</LookupEnumeration>
         </Field>
         <Field>
           <Order>13</Order>
-          <Id>maretronRateOfTurnDampening</Id>
+          <Id>rateOfTurnDamping</Id>
           <Name>Value</Name>
           <BitLength>16</BitLength>
           <FieldType>NUMBER</FieldType>
-          <Unit>s</Unit>
-          <Resolution>0.001</Resolution>
+           <Resolution>0.001</Resolution>
           <RangeMin>100</RangeMin>
           <RangeMax>60000</RangeMax>
-          <FieldType>TIME</FieldType>
-          <PhysicalQuantity>TIME</PhysicalQuantity>
         </Field>
       </Fields>
     </PGNInfo>
+
+    <PGNInfo>
+      <PGN>126208</PGN>
+      <Id>maretronCompassGetInstallationConfiguration</Id>
+      <Description>NMEA - Command group function - Maretron Proprietary Get Installation Configuration</Description>
+      <Type>Fast</Type>
+      <Complete>true</Complete>
+      <FieldCount>12</FieldCount>
+      <MinLength>6</MinLength>
+      <TransmissionIrregular>true</TransmissionIrregular>
+      <Fields>
+        <Field>
+          <Order>1</Order>
+          <Id>functionCode</Id>
+          <Name>Function Code</Name>
+          <Description>Command</Description>
+          <BitLength>8</BitLength>
+          <BitOffset>0</BitOffset>
+          <BitStart>0</BitStart>
+          <Match>1</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>253</RangeMax>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>GROUP_FUNCTION</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>2</Order>
+          <Id>pgn</Id>
+          <Name>PGN</Name>
+          <Description>Commanded PGN</Description>
+          <BitLength>24</BitLength>
+          <BitOffset>8</BitOffset>
+          <BitStart>0</BitStart>
+          <Match>126720</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>16777213</RangeMax>
+          <FieldType>NUMBER</FieldType>
+        </Field>
+        <Field>
+          <Order>3</Order>
+          <Id>priority</Id>
+          <Name>Priority</Name>
+          <BitLength>4</BitLength>
+          <BitOffset>32</BitOffset>
+          <BitStart>0</BitStart>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>13</RangeMax>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>PRIORITY</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>4</Order>
+          <Id>reserved</Id>
+          <Name>Reserved</Name>
+          <BitLength>4</BitLength>
+          <BitOffset>36</BitOffset>
+          <BitStart>4</BitStart>
+          <Resolution>1</Resolution>
+          <FieldType>RESERVED</FieldType>
+        </Field>
+        <Field>
+          <Order>5</Order>
+          <Id>numberOfParameters</Id>
+          <Name>Number of Parameters</Name>
+          <Description>How many parameter pairs will follow</Description>
+          <BitLength>8</BitLength>
+          <BitOffset>40</BitOffset>
+          <BitStart>0</BitStart>
+          <Match>4</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>253</RangeMax>
+          <FieldType>NUMBER</FieldType>
+        </Field>
+        <Field>
+          <Order>6</Order>
+          <Id>parameter</Id>
+          <Name>Parameter</Name>
+          <Description>Parameter index</Description>
+          <BitLength>8</BitLength>
+          <BitOffset>48</BitOffset>
+          <BitStart>0</BitStart>
+          <Match>1</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>253</RangeMax>
+          <FieldType>NUMBER</FieldType>
+        </Field>
+        <Field>
+          <Order>7</Order>
+          <Id>maretronVendorIdAndIndustryCode</Id>
+          <BitLength>16</BitLength>
+          <Name>Value</Name>
+          <Match>39049</Match>
+          <FieldType>NUMBER</FieldType>
+        </Field>
+        <Field>
+          <Order>8</Order>
+          <Id>parameter</Id>
+          <Name>Parameter</Name>
+          <Description>Parameter index</Description>
+          <BitLength>8</BitLength>
+          <Match>2</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>253</RangeMax>
+          <FieldType>NUMBER</FieldType>
+        </Field>
+        <Field>
+          <Order>9</Order>
+          <Id>productCode</Id>
+          <Name>Value</Name>
+          <BitLength>16</BitLength>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MARETRON_PRODUCT_CODE</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>10</Order>
+          <Id>parameter</Id>
+          <Name>Parameter</Name>
+          <Description>Parameter index</Description>
+          <BitLength>8</BitLength>
+          <Match>3</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>253</RangeMax>
+          <FieldType>NUMBER</FieldType>
+        </Field>
+        <Field>
+          <Order>11</Order>
+          <Id>softwareCode</Id>
+          <Name>Value</Name>
+          <BitLength>16</BitLength>
+          <Match>1</Match>
+          <FieldType>NUMBER</FieldType>
+        </Field>
+        <Field>
+          <Order>12</Order>
+          <Id>command</Id>
+          <Name>Value</Name>
+          <BitLength>8</BitLength>
+          <Match>94</Match> <!-- Compass Rate of Turn Configuration -->
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MARETRON_COMMAND</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>13</Order>
+          <Id>rateOfTurnParameter</Id>
+          <Name>Value</Name>
+          <BitLength>16</BitLength>
+          <Match>513</Match> <!-- Get Installation Configuration -->
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MARETRON_RATE_OF_TURN_PARAMETER</LookupEnumeration>
+        </Field>
+      </Fields>
+    </PGNInfo>
+
+    <PGNInfo>
+      <PGN>126208</PGN>
+      <Id>maretronCompassSetInstallation</Id>
+      <Description>NMEA - Command group function - Maretron Proprietary Start Rate of Turn Zeroing</Description>
+      <Explanation>This command causes the SSC300 to zero the rate of turn indication and record the compensation value used, along with the current operating temperature of the compass. The boat must remain at rest for a period of one minute after this command is issued.</Explanation>
+      <URL>https://www.maretron.com/support/manuals/SSC300UM_1.0.pdf</URL>
+      <Type>Fast</Type>
+      <Complete>true</Complete>
+      <FieldCount>12</FieldCount>
+      <MinLength>6</MinLength>
+      <TransmissionIrregular>true</TransmissionIrregular>
+      <Fields>
+        <Field>
+          <Order>1</Order>
+          <Id>functionCode</Id>
+          <Name>Function Code</Name>
+          <Description>Command</Description>
+          <BitLength>8</BitLength>
+          <BitOffset>0</BitOffset>
+          <BitStart>0</BitStart>
+          <Match>1</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>253</RangeMax>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>GROUP_FUNCTION</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>2</Order>
+          <Id>pgn</Id>
+          <Name>PGN</Name>
+          <Description>Commanded PGN</Description>
+          <BitLength>24</BitLength>
+          <BitOffset>8</BitOffset>
+          <BitStart>0</BitStart>
+          <Match>126720</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>16777213</RangeMax>
+          <FieldType>NUMBER</FieldType>
+        </Field>
+        <Field>
+          <Order>3</Order>
+          <Id>priority</Id>
+          <Name>Priority</Name>
+          <BitLength>4</BitLength>
+          <BitOffset>32</BitOffset>
+          <BitStart>0</BitStart>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>13</RangeMax>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>PRIORITY</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>4</Order>
+          <Id>reserved</Id>
+          <Name>Reserved</Name>
+          <BitLength>4</BitLength>
+          <BitOffset>36</BitOffset>
+          <BitStart>4</BitStart>
+          <Resolution>1</Resolution>
+          <FieldType>RESERVED</FieldType>
+        </Field>
+        <Field>
+          <Order>5</Order>
+          <Id>numberOfParameters</Id>
+          <Name>Number of Parameters</Name>
+          <Description>How many parameter pairs will follow</Description>
+          <BitLength>8</BitLength>
+          <BitOffset>40</BitOffset>
+          <BitStart>0</BitStart>
+          <Match>4</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>253</RangeMax>
+          <FieldType>NUMBER</FieldType>
+        </Field>
+        <Field>
+          <Order>6</Order>
+          <Id>parameter</Id>
+          <Name>Parameter</Name>
+          <Description>Parameter index</Description>
+          <BitLength>8</BitLength>
+          <BitOffset>48</BitOffset>
+          <BitStart>0</BitStart>
+          <Match>1</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>253</RangeMax>
+          <FieldType>NUMBER</FieldType>
+        </Field>
+        <Field>
+          <Order>7</Order>
+          <Id>maretronVendorIdAndIndustryCode</Id>
+          <BitLength>16</BitLength>
+          <Name>Value</Name>
+          <Match>39049</Match>
+          <FieldType>NUMBER</FieldType>
+        </Field>
+        <Field>
+          <Order>8</Order>
+          <Id>parameter</Id>
+          <Name>Parameter</Name>
+          <Description>Parameter index</Description>
+          <BitLength>8</BitLength>
+          <Match>2</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>253</RangeMax>
+          <FieldType>NUMBER</FieldType>
+        </Field>
+        <Field>
+          <Order>9</Order>
+          <Id>productCode</Id>
+          <Name>Value</Name>
+          <BitLength>16</BitLength>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MARETRON_PRODUCT_CODE</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>10</Order>
+          <Id>parameter</Id>
+          <Name>Parameter</Name>
+          <Description>Parameter index</Description>
+          <BitLength>8</BitLength>
+          <Match>3</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>253</RangeMax>
+          <FieldType>NUMBER</FieldType>
+        </Field>
+        <Field>
+          <Order>11</Order>
+          <Id>softwareCode</Id>
+          <Name>Value</Name>
+          <BitLength>16</BitLength>
+          <Match>1</Match>
+          <FieldType>NUMBER</FieldType>
+        </Field>
+        <Field>
+          <Order>12</Order>
+          <Id>command</Id>
+          <Name>Value</Name>
+          <BitLength>8</BitLength>
+          <Match>94</Match> <!-- Compass Rate of Turn Configuration -->
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MARETRON_COMMAND</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>13</Order>
+          <Id>rateOfTurnParameter</Id>
+          <Name>XX</Name>
+          <BitLength>16</BitLength>
+          <Match>514</Match> <!-- Set Installation Direction -->
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MARETRON_RATE_OF_TURN_PARAMETER</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>14</Order>
+          <Id>orientation</Id>
+          <Name>Orientation</Name>
+          <BitLength>16</BitLength>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MARETRON_INSTALLATION_ORIENTATION</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>15</Order>
+          <Id>direction</Id>
+          <Name>Direction</Name>
+          <BitLength>16</BitLength>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MARETRON_INSTALLATION_DIRECTION</LookupEnumeration>
+        </Field>
+      </Fields>
+    </PGNInfo>
+
+
+
     <PGNInfo>
       <PGN>126208</PGN>
       <Id>maretronCompassResendCalibrationStatus</Id>
@@ -929,11 +2148,11 @@
         </Field>
         <Field>
           <Order>9</Order>
-          <Id>ssc300ProductCode</Id>
+          <Id>productCode</Id>
           <Name>Value</Name>
           <BitLength>16</BitLength>
-<!--          <Match>2686</Match> -->
-          <FieldType>NUMBER</FieldType>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MARETRON_PRODUCT_CODE</LookupEnumeration>
         </Field>
         <Field>
           <Order>10</Order>
@@ -958,16 +2177,185 @@
         </Field>
         <Field>
           <Order>12</Order>
-          <Id>maretronCommand</Id>
+          <Id>command</Id>
           <Name>Value</Name>
           <BitLength>8</BitLength>
-          <Match>80</Match>
+          <Match>80</Match> <!-- Compass Resend Calibration Status -->
           <FieldType>LOOKUP</FieldType>
           <LookupEnumeration>MARETRON_COMMAND</LookupEnumeration>
         </Field>
       </Fields>
     </PGNInfo>
+
     <PGNInfo>
+      <PGN>126208</PGN>
+      <Id>maretronSetVariationSource</Id>
+      <Description>NMEA - Command group function - Maretron Proprietary Set Variation Source</Description>
+      <URL>https://www.maretron.com/support/manuals/SSC300UM_1.0.pdf</URL>
+      <Type>Fast</Type>
+      <Complete>true</Complete>
+      <FieldCount>12</FieldCount>
+      <MinLength>6</MinLength>
+      <TransmissionIrregular>true</TransmissionIrregular>
+      <Fields>
+        <Field>
+          <Order>1</Order>
+          <Id>functionCode</Id>
+          <Name>Function Code</Name>
+          <Description>Command</Description>
+          <BitLength>8</BitLength>
+          <BitOffset>0</BitOffset>
+          <BitStart>0</BitStart>
+          <Match>1</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>253</RangeMax>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>GROUP_FUNCTION</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>2</Order>
+          <Id>pgn</Id>
+          <Name>PGN</Name>
+          <Description>Commanded PGN</Description>
+          <BitLength>24</BitLength>
+          <BitOffset>8</BitOffset>
+          <BitStart>0</BitStart>
+          <Match>126720</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>16777213</RangeMax>
+          <FieldType>NUMBER</FieldType>
+        </Field>
+        <Field>
+          <Order>3</Order>
+          <Id>priority</Id>
+          <Name>Priority</Name>
+          <BitLength>4</BitLength>
+          <BitOffset>32</BitOffset>
+          <BitStart>0</BitStart>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>13</RangeMax>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>PRIORITY</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>4</Order>
+          <Id>reserved</Id>
+          <Name>Reserved</Name>
+          <BitLength>4</BitLength>
+          <BitOffset>36</BitOffset>
+          <BitStart>4</BitStart>
+          <Resolution>1</Resolution>
+          <FieldType>RESERVED</FieldType>
+        </Field>
+        <Field>
+          <Order>5</Order>
+          <Id>numberOfParameters</Id>
+          <Name>Number of Parameters</Name>
+          <Description>How many parameter pairs will follow</Description>
+          <BitLength>8</BitLength>
+          <BitOffset>40</BitOffset>
+          <BitStart>0</BitStart>
+          <Match>4</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>253</RangeMax>
+          <FieldType>NUMBER</FieldType>
+        </Field>
+        <Field>
+          <Order>6</Order>
+          <Id>parameter</Id>
+          <Name>Parameter</Name>
+          <Description>Parameter index</Description>
+          <BitLength>8</BitLength>
+          <BitOffset>48</BitOffset>
+          <BitStart>0</BitStart>
+          <Match>1</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>253</RangeMax>
+          <FieldType>NUMBER</FieldType>
+        </Field>
+        <Field>
+          <Order>7</Order>
+          <Id>maretronVendorIdAndIndustryCode</Id>
+          <BitLength>16</BitLength>
+          <Name>Value</Name>
+          <Match>39049</Match>
+          <FieldType>NUMBER</FieldType>
+        </Field>
+        <Field>
+          <Order>8</Order>
+          <Id>parameter</Id>
+          <Name>Parameter</Name>
+          <Description>Parameter index</Description>
+          <BitLength>8</BitLength>
+          <Match>2</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>253</RangeMax>
+          <FieldType>NUMBER</FieldType>
+        </Field>
+        <Field>
+          <Order>9</Order>
+          <Id>productCode</Id>
+          <Name>Value</Name>
+          <BitLength>16</BitLength>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MARETRON_PRODUCT_CODE</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>10</Order>
+          <Id>parameter</Id>
+          <Name>Parameter</Name>
+          <Description>Parameter index</Description>
+          <BitLength>8</BitLength>
+          <Match>3</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>253</RangeMax>
+          <FieldType>NUMBER</FieldType>
+        </Field>
+        <Field>
+          <Order>11</Order>
+          <Id>softwareCode</Id>
+          <Name>Value</Name>
+          <BitLength>16</BitLength>
+          <Match>1</Match>
+          <FieldType>NUMBER</FieldType>
+        </Field>
+        <Field>
+          <Order>12</Order>
+          <Id>command</Id>
+          <Name>Value</Name>
+          <BitLength>8</BitLength>
+          <Match>93</Match> <!-- Compass Set Variation Source -->
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MARETRON_COMMAND</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>13</Order>
+          <Id>source</Id>
+          <Name>Source</Name>
+          <BitLength>8</BitLength>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MARETRON_VARIATION_SOURCE</LookupEnumeration>
+        </Field>
+      </Fields>
+    </PGNInfo>
+
+    <PGNInfo>
+      <!-- FIXME: this is documented in the manual, but the values
+           seen on the wire don't match -->
       <PGN>126208</PGN>
       <Id>maretronCompassInstallationOffsetCalibration</Id>
       <Description>NMEA - Command group function - Maretron Proprietary Installation Offset</Description>
@@ -1087,11 +2475,11 @@
         </Field>
         <Field>
           <Order>9</Order>
-          <Id>ssc300ProductCode</Id>
+          <Id>productCode</Id>
           <Name>Value</Name>
           <BitLength>16</BitLength>
-<!--          <Match>2686</Match> -->
-          <FieldType>NUMBER</FieldType>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MARETRON_PRODUCT_CODE</LookupEnumeration>
         </Field>
         <Field>
           <Order>10</Order>
@@ -1116,10 +2504,10 @@
         </Field>
         <Field>
           <Order>12</Order>
-          <Id>maretronCommand</Id>
+          <Id>command</Id>
           <Name>Value</Name>
           <BitLength>8</BitLength>
-          <Match>36</Match>
+          <Match>36</Match> <!-- Compass Installation Offset Calibration -->
           <FieldType>LOOKUP</FieldType>
           <LookupEnumeration>MARETRON_COMMAND</LookupEnumeration>
         </Field>
@@ -1128,13 +2516,175 @@
           <Id>heading</Id>
           <Name>Value</Name>
           <BitLength>16</BitLength>
-          <Unit>deg</Unit>
           <Resolution>0.1</Resolution>
           <Signed>false</Signed>
           <RangeMin>0</RangeMin>
           <RangeMax>359.9</RangeMax>
           <FieldType>NUMBER</FieldType>
           <PhysicalQuantity>ANGLE</PhysicalQuantity>
+        </Field>
+      </Fields>
+    </PGNInfo>
+
+    <PGNInfo>
+      <PGN>126208</PGN>
+      <Id>maretronUnknownCommand</Id>
+      <Description>NMEA - Command group function - Unknown Maretron Proprietary Command</Description>
+      <Explanation>A Maretron command that hasn't yet been reverse engineered.</Explanation>
+      <Type>Fast</Type>
+      <Complete>false</Complete>
+      <FieldCount>13</FieldCount>
+      <MinLength>6</MinLength>
+      <TransmissionIrregular>true</TransmissionIrregular>
+      <Fields>
+        <Field>
+          <Order>1</Order>
+          <Id>functionCode</Id>
+          <Name>Function Code</Name>
+          <Description>Command</Description>
+          <BitLength>8</BitLength>
+          <BitOffset>0</BitOffset>
+          <BitStart>0</BitStart>
+          <Match>1</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>253</RangeMax>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>GROUP_FUNCTION</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>2</Order>
+          <Id>pgn</Id>
+          <Name>PGN</Name>
+          <Description>Commanded PGN</Description>
+          <BitLength>24</BitLength>
+          <BitOffset>8</BitOffset>
+          <BitStart>0</BitStart>
+          <Match>126720</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>16777213</RangeMax>
+          <FieldType>NUMBER</FieldType>
+        </Field>
+        <Field>
+          <Order>3</Order>
+          <Id>priority</Id>
+          <Name>Priority</Name>
+          <BitLength>4</BitLength>
+          <BitOffset>32</BitOffset>
+          <BitStart>0</BitStart>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>13</RangeMax>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>PRIORITY</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>4</Order>
+          <Id>reserved</Id>
+          <Name>Reserved</Name>
+          <BitLength>4</BitLength>
+          <BitOffset>36</BitOffset>
+          <BitStart>4</BitStart>
+          <Resolution>1</Resolution>
+          <FieldType>RESERVED</FieldType>
+        </Field>
+        <Field>
+          <Order>5</Order>
+          <Id>numberOfParameters</Id>
+          <Name>Number of Parameters</Name>
+          <Description>How many parameter pairs will follow</Description>
+          <BitLength>8</BitLength>
+          <BitOffset>40</BitOffset>
+          <BitStart>0</BitStart>
+          <Match>4</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>253</RangeMax>
+          <FieldType>NUMBER</FieldType>
+        </Field>
+        <Field>
+          <Order>6</Order>
+          <Id>parameter</Id>
+          <Name>Parameter</Name>
+          <Description>Parameter index</Description>
+          <BitLength>8</BitLength>
+          <BitOffset>48</BitOffset>
+          <BitStart>0</BitStart>
+          <Match>1</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>253</RangeMax>
+          <FieldType>NUMBER</FieldType>
+        </Field>
+        <Field>
+          <Order>7</Order>
+          <Id>maretronVendorIdAndIndustryCode</Id>
+          <BitLength>16</BitLength>
+          <Name>Value</Name>
+          <Match>39049</Match>
+          <FieldType>NUMBER</FieldType>
+        </Field>
+        <Field>
+          <Order>8</Order>
+          <Id>parameter</Id>
+          <Name>Parameter</Name>
+          <Description>Parameter index</Description>
+          <BitLength>8</BitLength>
+          <Match>2</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>253</RangeMax>
+          <FieldType>NUMBER</FieldType>
+        </Field>
+        <Field>
+          <Order>9</Order>
+          <Id>productCode</Id>
+          <Name>Value</Name>
+          <BitLength>16</BitLength>
+          <FieldType>LOOKUP</FieldType>
+          <LookupEnumeration>MARETRON_PRODUCT_CODE</LookupEnumeration>
+        </Field>
+        <Field>
+          <Order>10</Order>
+          <Id>parameter</Id>
+          <Name>Parameter</Name>
+          <Description>Parameter index</Description>
+          <BitLength>8</BitLength>
+          <Match>3</Match>
+          <Resolution>1</Resolution>
+          <Signed>false</Signed>
+          <RangeMin>0</RangeMin>
+          <RangeMax>253</RangeMax>
+          <FieldType>NUMBER</FieldType>
+        </Field>
+        <Field>
+          <Order>11</Order>
+          <Id>softwareCode</Id>
+          <Name>Value</Name>
+          <BitLength>16</BitLength>
+          <Match>1</Match>
+          <FieldType>NUMBER</FieldType>
+        </Field>
+        <Field>
+          <Order>12</Order>
+          <Id>command</Id>
+          <Name>Value</Name>
+          <BitLength>8</BitLength>
+          <FieldType>NUMBER</FieldType>
+        </Field>
+        <Field>
+          <Order>13</Order>
+          <Id>data</Id>
+          <Name>Data</Name>
+          <BitLength>1784</BitLength>
+          <FieldType>BINARY</FieldType>
         </Field>
       </Fields>
     </PGNInfo>

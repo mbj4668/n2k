@@ -32,11 +32,16 @@ GENERATED_ERL_MODULES = n2k_pgn $(CUSTOM_MODULES)
 EXCLUDE_ERL_MODULES = gen_n2k_pgn gen_pgns_term n2k_pgn_callback
 ERLC_OPTS = -Werror
 
+ESCRIPT_FILE = bin/n2k
+ESCRIPT_MODULE = n2k_script
+
 $(DIALYZER_PLT):
 	dialyzer --build_plt --output_plt $(DIALYZER_PLT) \
 	  --apps erts kernel stdlib
 
 include erl.mk
+
+all: escript
 
 erl.mk:
 	curl -s -O https://raw.githubusercontent.com/mbj4668/erl.mk/main/$@
@@ -51,9 +56,13 @@ src/pgns.term: ebin/gen_pgns_term.beam $(PGNS_XML)
 ebin/%.beam: $(CUSTOM_DIR)/%.erl $(BEHAVIOR_BEAMS)
 	erlc $(ERLC_OPTS) -pa ebin -o ebin $<
 
+.PHONY: n2k-escript
+n2k-escript:
+	$(MAKE) ESCRIPT_FILE=bin/n2ks ESCRIPT_MODULE=n2k_script escript
+
 clean: n2k-clean
 
 n2k-clean:
-	rm -f src/n2k_pgn.erl src/pgns.term
+	rm -f src/n2k_pgn.erl src/pgns.term bin/n2k
 
 test-build-erl: MANUFACTURER_CODES = all

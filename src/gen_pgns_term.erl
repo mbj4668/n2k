@@ -448,7 +448,7 @@ field_type("STRING_LAU") ->
 %    %% <ctrl> == 1 -> ascii
 %    string_variable_medium;
 field_type("STRING_LZ") ->
-    %% NOTE: this is a non-standard string type; used in old fusion PGNs.
+    %% NOTE: this is a non-standard string type
     %% <len> <char>*
     string_lz.
 

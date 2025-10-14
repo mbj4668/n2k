@@ -843,7 +843,9 @@ format_field(F, DirectMatch, AllFs) ->
                             string_variable_short ->
                                 -1;
                             string_variable_medium ->
-                                -2
+                                -2;
+                            string_lz ->
+                                -3
                         end
                 end
         end,
@@ -885,6 +887,8 @@ format_field(F, DirectMatch, AllFs) ->
             [Var, "_L:8", ",", Var, ":(", Var, "_L-1)/binary"];
         Size == -2 ->
             [Var, "_L:16", ",", Var, ":(", Var, "_L-2)/binary"];
+        Size == -3 ->
+            [Var, "_L:8", ",", Var, ":(", Var, "_L)/binary"];
         IsMatch andalso BitType == "bitstring" ->
             [Var, ":", Size];
         Id == "data" ->

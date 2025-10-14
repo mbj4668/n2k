@@ -58,6 +58,8 @@ get_devices_handler({frame, Frame}, S) when S#get_devices.st == collect_devices 
         true ->
             S
     end;
+get_devices_handler({frame, _Frame}, S) ->
+    S;
 get_devices_handler({message, Msg}, S0) ->
     {_Time, {_Pri, PGN, Src, _Dst}, _} = Msg,
     S1 =
