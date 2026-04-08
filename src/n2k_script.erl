@@ -112,19 +112,7 @@ opt_match() ->
             "Only inlcude messages that match the given expression"
     }.
 
-do_convert(
-    Env,
-    CmdStack,
-    Quiet,
-    InFmt0,
-    OutFmt,
-    PStr,
-    SrcIds,
-    PGNs,
-    Expr,
-    OutFName,
-    InFName
-) ->
+do_convert(Env, CmdStack, Quiet, InFmt0, OutFmt, PStr, SrcIds, PGNs, Expr, OutFName, InFName) ->
     try
         InFmt =
             case InFmt0 of
@@ -147,11 +135,7 @@ do_convert(
         {CloseF, WriteF} =
             if
                 OutFName /= undefined ->
-                    {ok, OutFd} =
-                        file:open(
-                            OutFName,
-                            [write, raw, binary, delayed_write]
-                        ),
+                    {ok, OutFd} = file:open(OutFName, [write, raw, binary, delayed_write]),
                     {fun() -> file:close(OutFd) end, fun(Bin) -> file:write(OutFd, Bin) end};
                 true ->
                     {fun() -> ok end, fun(Bin) -> io:put_chars(Bin) end}
@@ -194,11 +178,7 @@ do_convert(
                             (Frame, State0) when element(2, Frame) /= 'service' ->
                                 case n2k:decode_nmea(Frame, State0) of
                                     {true, Message, State1} ->
-                                        counters:add(
-                                            Cnts,
-                                            ?CNT_MESSAGES,
-                                            1
-                                        ),
+                                        counters:add(Cnts, ?CNT_MESSAGES, 1),
                                         PrettyF(Message),
                                         State1;
                                     {false, State1} ->
@@ -207,11 +187,7 @@ do_convert(
                                         frame_lost(Src, PGN, Order, ETab, Cnts),
                                         State1;
                                     {error, Error, State1} ->
-                                        io:format(
-                                            standard_error,
-                                            n2k:fmt_error(Error),
-                                            []
-                                        ),
+                                        io:format(standard_error, n2k:fmt_error(Error), []),
                                         State1
                                 end;
                             (SrvRec, State0) when InFmt == can ->
@@ -260,8 +236,7 @@ do_convert(
                                 X = lists:keysort(1, X0),
                                 Y = lists:keysort(1, Y0),
                                 Z = lists:keysort(1, Z0),
-                                Merged =
-                                    n2k_devices:merge_device_information(X, Y, Z),
+                                Merged = n2k_devices:merge_device_information(X, Y, Z),
                                 n2k_devices:print_devices(WriteF, Merged);
                             (_, S) ->
                                 S
@@ -274,11 +249,7 @@ do_convert(
                             (Frame, State0) when element(2, Frame) /= 'service' ->
                                 case n2k:decode_nmea(Frame, State0) of
                                     {true, _Message, State1} ->
-                                        counters:add(
-                                            Cnts,
-                                            ?CNT_MESSAGES,
-                                            1
-                                        ),
+                                        counters:add(Cnts, ?CNT_MESSAGES, 1),
                                         State1;
                                     {false, State1} ->
                                         State1;
@@ -286,19 +257,11 @@ do_convert(
                                         frame_lost(Src, PGN, Order, ETab, Cnts),
                                         State1;
                                     {error, Error, State1} ->
-                                        io:format(
-                                            standard_error,
-                                            n2k:fmt_error(Error),
-                                            []
-                                        ),
+                                        io:format(standard_error, n2k:fmt_error(Error), []),
                                         State1
                                 end;
                             (_SrvRec, State0) when InFmt == can ->
-                                counters:add(
-                                    Cnts,
-                                    ?CNT_MESSAGES,
-                                    1
-                                ),
+                                counters:add(Cnts, ?CNT_MESSAGES, 1),
                                 State0
                         end,
                         n2k:decode_nmea_init()
@@ -378,11 +341,7 @@ do_convert(
                 end,
             if
                 not IsEpipe ->
-                    io:format(
-                        standard_error,
-                        "** ~p\n  ~p\n",
-                        [_Error, StackTrace]
-                    ),
+                    io:format(standard_error, "** ~p\n  ~p\n", [_Error, StackTrace]),
                     halt(1);
                 true ->
                     halt(0)
