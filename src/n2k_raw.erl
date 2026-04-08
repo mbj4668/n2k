@@ -33,7 +33,12 @@ read_raw_file(FName) ->
 ) ->
     Acc :: term().
 read_raw_file(FName, F, InitAcc) ->
-    {ok, Fd} = file:open(FName, [read, raw, binary, read_ahead]),
+    ZOpts =
+        case lists:suffix(".gz", FName) of
+            true -> [compressed];
+            false -> []
+        end,
+    {ok, Fd} = file:open(FName, [read, raw, binary, read_ahead] ++ ZOpts),
     try
         read_raw_fd(Fd, F, InitAcc)
     after
@@ -45,8 +50,14 @@ read_raw_fd(Fd, F, Acc) ->
         {ok, <<$#, _/binary>>} ->
             read_raw_fd(Fd, F, Acc);
         {ok, Line} ->
-            {Frame, _Dir} = decode_raw(Line),
-            read_raw_fd(Fd, F, F(Frame, Acc));
+            Acc1 =
+                try decode_raw(Line) of
+                    {Frame, _Dir} ->
+                        F(Frame, Acc)
+                catch
+                    _:_ -> Acc
+                end,
+            read_raw_fd(Fd, F, Acc1);
         _ ->
             Acc
     end.
