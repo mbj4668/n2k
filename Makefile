@@ -34,8 +34,10 @@ BUILD_DEPS = eyaml
 dep_eyaml = git https://github.com/mbj4668/eyaml.git
 
 GENERATED_ERL_MODULES = n2k_pgn $(CUSTOM_MODULES)
-EXCLUDE_ERL_MODULES = gen_n2k_pgn gen_pgns_term n2k_pgn_callback
+EXCLUDE_ERL_MODULES = gen_n2k_pgn gen_pgns_term n2k_pgn_callback n2k_script
 ERLC_OPTS = -Werror
+
+EXCLUDE_DEPS = eclip mtab
 
 ESCRIPT_FILE = bin/n2k
 ESCRIPT_MODULE = n2k_script
