@@ -27,7 +27,7 @@
 %% Represents one CAN frame, with additional meta data (time)
 -type frame() ::
     {
-        % milliseconds
+        % milliseconds, wraps every 24 hours
         Time :: integer(),
         Id :: canid(),
         % 0-8 bytes
@@ -37,7 +37,7 @@
 %% Represents one NMEA message, with additional meta data (time)
 -type message() ::
     {
-        % milliseconds
+        % milliseconds, wraps every 24 hours
         Time :: integer(),
         Id :: canid(),
         Data :: data()
