@@ -264,7 +264,7 @@ merge_tup({undefined, BX, undefined}, {AY, _BY, CY}) ->
 merge_tup({AX, undefined, undefined}, {_AY, BY, CY}) ->
     {AX, BY, CY}.
 
--define(ISOADDRESSCLAIM_HEADER, " ~-15s ~-40s").
+-define(ISOADDRESSCLAIM_HEADER, " ~-7s ~-15s ~-40s").
 -define(PRODUCTINFORMATION_HEADER, " ~-15s ~-15s ~-8s ~-3s").
 -define(CONFIGINFORMATION_HEADER, " ~-15s ~-15s ~-15s").
 
@@ -282,6 +282,7 @@ merge_tup({AX, undefined, undefined}, {_AY, BY, CY}) ->
 print_devices(WriteF, Res) ->
     Hdr = [
         "src",
+        "unique number",
         "manufacturer",
         "function",
         "model",
@@ -297,10 +298,10 @@ print_devices(WriteF, Res) ->
         Hdr
         | lists:map(
             fun({Src, {A, B, C}}) ->
-                {A0, A1} = pi(A),
+                {A0, A1, A2} = pi(A),
                 {B0, B1, B2, B3, B4} = pp(B),
                 {C0, C1, C2} = pc(C),
-                [Src, A0, A1, B0, B1, B2, B3, B4, C0, C1, C2]
+                [Src, A0, A1, A2, B0, B1, B2, B3, B4, C0, C1, C2]
             end,
             Res
         )
@@ -322,7 +323,7 @@ print_devices(WriteF, Res) ->
 %fmt_isoAddressClaim({_Time, _, {isoAddressClaim, Fields}}) ->
 pi({_Time, _, {isoAddressClaim, Fields}}) ->
     [
-        _UniqueNumber,
+        {uniqueNumber, Uniq},
         {manufacturerCode, Code},
         _DeviceInstanceLower,
         _DeviceInstanceUpper,
@@ -331,11 +332,12 @@ pi({_Time, _, {isoAddressClaim, Fields}}) ->
         | _
     ] = Fields,
     {
+        io_lib:format("~w", [Uniq]),
         get_isoAddressClaim_enum(manufacturerCode, Code),
         get_isoAddressClaim_enum(deviceFunction, {Class, Function})
     };
 pi(undefined) ->
-    {"", ""}.
+    {"", "", ""}.
 
 %fmt_productInformation({_Time, _, {productInformation, Fields}}) ->
 pp({_Time, _, {productInformation, Fields}}) ->
