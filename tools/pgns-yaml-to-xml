@@ -1,0 +1,141 @@
+#!/usr/bin/env escript
+%% -*- erlang -*-
+%%! -pa deps/eyaml/ebin
+
+main([InF]) ->
+    {ok, [Doc]} = eyaml:parse_file(InF),
+    Defs = maps:get(~"defs", Doc, #{}),
+    write_header(),
+    write_enums(maps:get(~"enums", Doc, [])),
+    write_pgns(maps:get(~"pgns", Doc, []), Defs),
+    write_footer().
+
+write_header() ->
+    io:put_chars("""
+    <PGNDefinitions xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                    xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+                    Version="0.1">
+      <SchemaVersion>2.0.0</SchemaVersion>
+
+    """).
+
+write_enums([]) ->
+    ok;
+write_enums(L) ->
+    io:put_chars("  <LookupEnumerations>\n"),
+    lists:foreach(fun write_enum/1, L),
+    io:put_chars("  </LookupEnumerations>\n").
+
+write_enum(#{~"name" := Name, ~"vals" := Vals}) ->
+    io:format("    <LookupEnumeration Name='~s'>\n", [Name]),
+    lists:foreach(fun write_enum_val/1, lists:usort(maps:to_list(Vals))),
+    io:format("    </LookupEnumeration>\n", []).
+
+write_enum_val({Val, Name}) ->
+    io:format("      <EnumPair Value='~w' Name='~s'/>\n", [Val, Name]).
+
+write_pgns([], _) ->
+    ok;
+write_pgns(L, Defs) ->
+    io:put_chars("  <PGNs>\n"),
+    lists:foreach(fun(PGN) -> write_pgn(PGN, Defs) end, L),
+    io:put_chars("  </PGNs>\n").
+
+write_pgn(Map, Defs) ->
+    io:format("    <PGNInfo>\n", []),
+    lists:foreach(fun({Key, Name}) -> write_item(Key, Name, Map, "      ") end, pgn_items()),
+    write_fields(maps:get(~"fields", Map), Defs),
+    io:format("    </PGNInfo>\n", []).
+
+pgn_items() ->
+    [{~"pgn", "PGN"},
+        {~"id", "Id"},
+        {~"description", "Description"},
+        {~"explanation", "Explanation"},
+        {~"url", "URL"},
+        {~"type", "Type"},
+        {~"complete", "Complete"}].
+
+write_item(Key, Name, Map, Indent) ->
+    case Map of
+        #{Key := Val} ->
+            if is_integer(Val); is_float(Val) ->
+                    io:format("~s<~s>~w</~s>\n", [Indent, Name, Val, Name]);
+               true ->
+                    io:format("~s<~s>~s</~s>\n", [Indent, Name, Val, Name])
+            end;
+        _ ->
+            ok
+    end.
+
+write_fields(L0, Defs) ->
+    L = expand_list(L0, Defs),
+    io:format("      <Fields>\n", []),
+    lists:foreach(fun(F) -> write_field(F, Defs) end, lists:zip(L, lists:seq(1, length(L)))),
+    io:format("      </Fields>\n", []).
+
+expand_list([#{~"_add_list_entries" := Ref} | T], Defs) ->
+    maps:get(Ref, Defs) ++ expand_list(T, Defs);
+expand_list([H | T], Defs) ->
+    [H | expand_list(T, Defs)];
+expand_list([], _) ->
+    [].
+
+write_field({Map0, Order}, Defs) ->
+    Map =
+        case maps:find(~"_merge_from_def", Map0) of
+            {ok, Ref} ->
+                #{Ref := Map1} = Defs,
+                maps:merge(Map1, maps:remove(~"_merge_from_def", Map0));
+            _ ->
+                Map0
+        end,
+    io:format("        <Field>\n", []),
+    io:format("          <Order>~w</Order>\n", [Order]),
+    lists:foreach(fun({Key, Name}) -> write_item(Key, Name, Map, "          ") end, field_items()),
+    write_reserved(Map),
+    write_range(Map),
+    write_enum_type(Map),
+    write_binary_length(Map),
+    io:format("        </Field>\n", []).
+
+field_items() ->
+    [{~"id", ~"Id"},
+        {~"name", ~"Name"},
+        {~"description", ~"Description"},
+        {~"bitlength", ~"BitLength"},
+        {~"bitlengthvariable", ~"BitLengthVariable"},
+        {~"match", ~"Match"},
+        {~"signed", ~"Signed"},
+        {~"physical-quantity", ~"PhysicalQuantity"},
+        {~"type", ~"FieldType"},
+        {~"enum", ~"LookupEnumeration"},
+        {~"resolution", ~"Resolution"}].
+
+write_reserved(#{~"id" := ~"reserved"}) ->
+    io:format("          <Name>Reserved</Name>\n", []),
+    io:format("          <FieldType>RESERVED</FieldType>\n", []);
+write_reserved(_) ->
+    ok.
+
+write_range(#{~"range" := #{~"min" := Min, ~"max" := Max}}) ->
+    io:format("          <RangeMin>~w</RangeMin>\n", [Min]),
+    io:format("          <RangeMax>~w</RangeMax>\n", [Max]);
+write_range(_) ->
+    ok.
+
+write_binary_length(#{~"type" := ~"BINARY"}) ->
+    io:format("          <BitLength>1784</BitLength>\n", []);
+write_binary_length(_) ->
+    ok.
+
+write_enum_type(#{~"enum" := _}) ->
+    io:format("          <FieldType>LOOKUP</FieldType>\n", []);
+write_enum_type(_) ->
+    ok.
+
+write_footer() ->
+    io:put_chars("""
+    </PGNDefinitions>
+
+    """).
