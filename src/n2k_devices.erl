@@ -97,7 +97,9 @@ get_devices_handler({message, Msg}, S0) ->
         %% configInformation
         PGN == 126998 ->
             L = maybe_add(Src, Msg, S1#get_devices.configInformations),
-            S1#get_devices{configInformations = L}
+            S1#get_devices{configInformations = L};
+        true ->
+            S1
     end;
 get_devices_handler(step0, S) ->
     %% Send request for 60928 to all devices again
