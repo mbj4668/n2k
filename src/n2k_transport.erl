@@ -2,6 +2,7 @@
 -module(n2k_transport).
 
 -export([open_raw_ip/3, open_raw_ip/4]).
+-export([make/2]).
 -export([send/2, send_fast/2, recv/4, close/1]).
 
 -export_type([transport/0]).
@@ -59,6 +60,13 @@ open_raw_ip(tcp, Address, Port, _) ->
         {error, Error} ->
             {error, Error}
     end.
+
+-spec make(
+    SendF :: fun((n2k:frame()) -> any()),
+    CloseF :: fun(() -> any())
+) -> transport().
+make(SendF, CloseF) ->
+    #n2k_transport{sendf = SendF, closef = CloseF}.
 
 send(#n2k_transport{sendf = SendF}, Frame) ->
     SendF(Frame).
